@@ -13,7 +13,7 @@ const HANDLERS = {
   submitStandup: (payload) => submitStandup(payload).then(() => ({})),
   fetchEods: () => withBadge(fetchEods()).then((eods) => ({ eods })),
   updateEod: (payload) => updateEod(payload).then((eods) => (showPendingBadge(eods), { eods })),
-  previewReminder: () => remindIfPending({ preview: true }),
+  previewReminder: (payload) => remind(payload?.kind || 'eod', { preview: true }),
 };
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -243,27 +243,69 @@ function extractErrors(html) {
   return [...errors];
 }
 
-// ---------- toolbar badge + EOD reminder ----------
-// The toolbar icon shows how many EODs still have no update, and an optional
-// daily notification (settings in the toolbar popup) nudges you to fill them in.
+// ---------- toolbar badge + reminders ----------
+// The toolbar icon shows how many EODs still have no update. Two optional daily
+// notifications (settings in the toolbar popup): a standup reminder when none has
+// been added today, and an EOD reminder when EODs are still empty.
 
 const BADGE_ALARM = 'eod-badge';
-const REMINDER_ALARM = 'eod-reminder';
-const SNOOZE_ALARM = 'eod-snooze';
-const REMINDER_KEY = 'eodReminder';
-const REMINDER_DEFAULTS = { enabled: false, time: '18:30', weekdaysOnly: true };
-const NOTIFY_EOD = 'eod-reminder';
-const NOTIFY_LOGIN = 'eod-reminder-login';
+const MANTIS_URL = 'https://projects.webmavens.dev/';
 const MISSED_GRACE_MS = 3 * 60 * 60 * 1000; // a reminder missed while Chrome was closed is dropped after this
 const TITLE = 'Mantis Quick Standup';
 
 const pendingEods = (eods) => eods.filter((e) => !e.update.trim());
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The EOD page lists standups; entries without a readable date count as today's.
+function todaysStandups(eods) {
+  const today = localDate(new Date());
+  return eods.filter((e) => {
+    const date = /^\d{4}-\d{2}-\d{2}/.exec(e.createdAt || '')?.[0];
+    return !date || date === today;
+  });
+}
+
+// What each reminder checks. Returns the notification plus the count it is
+// about (shown by the popup's Preview), or null when there is nothing to say.
+function eodReminderNote(eods, preview) {
+  const pending = pendingEods(eods);
+  if (!pending.length && !preview) return null;
+  const tickets = pending.slice(0, 4).map((e) => `#${e.ticket}`).join(', ') + (pending.length > 4 ? '…' : '');
+  return pending.length
+    ? { title: `${plural(pending.length, 'EOD')} still to fill in`, message: `${tickets}. Click to open the EOD page.`, count: pending.length }
+    : { title: 'No pending EODs', message: 'All EODs are filled in. This is how the reminder will look.', count: 0 };
+}
+
+function standupReminderNote(eods, preview) {
+  const added = todaysStandups(eods).length;
+  if (added && !preview) return null;
+  return added
+    ? { title: `${plural(added, 'standup')} added today`, message: 'Nothing to do. This is how the reminder will look.', count: added }
+    : { title: 'No standup added yet today', message: 'Open a Mantis ticket and use + Standup (Ctrl+Shift+S). Click to open Mantis.', count: 0 };
+}
+
+const REMINDERS = {
+  eod: {
+    label: 'EOD reminder', subject: 'EODs', key: 'eodReminder', defaults: { enabled: false, time: '18:30', weekdaysOnly: true },
+    alarm: 'eod-reminder', snooze: 'eod-snooze', notifyId: 'eod-reminder', loginId: 'eod-reminder-login', url: EOD_URL,
+    note: eodReminderNote, countKey: 'pending',
+  },
+  standup: {
+    label: 'Standup reminder', subject: 'standups', key: 'standupReminder', defaults: { enabled: false, time: '11:00', weekdaysOnly: true },
+    alarm: 'standup-reminder', snooze: 'standup-snooze', notifyId: 'standup-reminder', loginId: 'standup-reminder-login', url: MANTIS_URL,
+    note: standupReminderNote, countKey: 'added',
+  },
+};
 
 function showPendingBadge(eods) {
   const n = pendingEods(eods).length;
   chrome.action.setBadgeBackgroundColor({ color: '#7c3aed' });
   chrome.action.setBadgeText({ text: n ? String(n) : '' });
-  chrome.action.setTitle({ title: n ? `${TITLE}: ${n} EOD${n === 1 ? '' : 's'} pending` : `${TITLE}: no pending EODs` });
+  chrome.action.setTitle({ title: n ? `${TITLE}: ${plural(n, 'EOD')} pending` : `${TITLE}: no pending EODs` });
 }
 
 // Stay quiet when the count is unknown (e.g. logged out): no badge, reason in the tooltip.
@@ -280,9 +322,10 @@ function withBadge(promise) {
 
 const refreshBadge = () => withBadge(fetchEods()).catch(() => {});
 
-async function getReminder() {
-  const stored = (await chrome.storage.sync.get(REMINDER_KEY))[REMINDER_KEY];
-  return { ...REMINDER_DEFAULTS, ...stored };
+async function getReminder(kind) {
+  const { key, defaults } = REMINDERS[kind];
+  const stored = (await chrome.storage.sync.get(key))[key];
+  return { ...defaults, ...stored };
 }
 
 function nextReminderTime({ time, weekdaysOnly }, from = new Date()) {
@@ -294,27 +337,35 @@ function nextReminderTime({ time, weekdaysOnly }, from = new Date()) {
   return next.getTime();
 }
 
-async function scheduleReminder() {
-  await chrome.alarms.clear(REMINDER_ALARM);
-  const reminder = await getReminder();
-  if (reminder.enabled) await chrome.alarms.create(REMINDER_ALARM, { when: nextReminderTime(reminder) });
+// One at a time per reminder, and create() replaces in place, so the alarm never
+// briefly disappears while settings are being saved.
+const scheduling = {};
+function scheduleReminder(kind) {
+  const run = async () => {
+    const { alarm } = REMINDERS[kind];
+    const reminder = await getReminder(kind);
+    if (reminder.enabled) await chrome.alarms.create(alarm, { when: nextReminderTime(reminder) });
+    else await chrome.alarms.clear(alarm);
+  };
+  scheduling[kind] = (scheduling[kind] || Promise.resolve()).then(run, run);
+  return scheduling[kind];
 }
 
-async function remindIfPending({ preview = false } = {}) {
+async function remind(kind, { preview = false } = {}) {
+  const r = REMINDERS[kind];
+  if (!r) return { shown: false, reason: 'Unknown reminder.' };
   if (!chrome.notifications) return { shown: false, reason: 'Notifications are not allowed for this extension.' };
   let eods;
   try {
     eods = await withBadge(fetchEods());
   } catch (err) {
-    notify(NOTIFY_LOGIN, 'EOD reminder', `Couldn't check your EODs. ${err.message}`);
-    return { shown: true, pending: null };
+    notify(r.loginId, r.label, `Couldn't check your ${r.subject}. ${err.message}`);
+    return { shown: true, [r.countKey]: null };
   }
-  const pending = pendingEods(eods);
-  if (!pending.length && !preview) return { shown: false, pending: 0 };
-  const tickets = pending.slice(0, 4).map((e) => `#${e.ticket}`).join(', ') + (pending.length > 4 ? '…' : '');
-  notify(NOTIFY_EOD, pending.length ? `${pending.length} EOD${pending.length === 1 ? '' : 's'} still to fill in` : 'No pending EODs',
-    pending.length ? `${tickets}. Click to open the EOD page.` : 'All EODs are filled in. This is how the reminder will look.');
-  return { shown: true, pending: pending.length };
+  const note = r.note(eods, preview);
+  if (!note) return { shown: false, [r.countKey]: r.note(eods, true).count };
+  notify(r.notifyId, note.title, note.message);
+  return { shown: true, [r.countKey]: note.count };
 }
 
 function notify(id, title, message) {
@@ -326,18 +377,22 @@ function notify(id, title, message) {
 
 async function onAlarm(alarm) {
   if (alarm.name === BADGE_ALARM) return refreshBadge();
-  if (alarm.name === SNOOZE_ALARM) return remindIfPending();
-  if (alarm.name !== REMINDER_ALARM) return;
-  const reminder = await getReminder();
-  if (reminder.enabled && Date.now() - alarm.scheduledTime < MISSED_GRACE_MS) await remindIfPending();
-  await scheduleReminder();
+  for (const [kind, r] of Object.entries(REMINDERS)) {
+    if (alarm.name === r.snooze) return remind(kind);
+    if (alarm.name !== r.alarm) continue;
+    const reminder = await getReminder(kind);
+    if (reminder.enabled && Date.now() - alarm.scheduledTime < MISSED_GRACE_MS) await remind(kind);
+    return scheduleReminder(kind);
+  }
 }
 
 function setup() {
   chrome.alarms.create(BADGE_ALARM, { periodInMinutes: 15 });
   refreshBadge();
-  scheduleReminder();
+  for (const kind of Object.keys(REMINDERS)) scheduleReminder(kind);
 }
+
+const reminderForNotification = (id) => Object.values(REMINDERS).find((r) => r.notifyId === id || r.loginId === id);
 
 // Notification listeners exist only once the optional permission is granted.
 let notificationsWired = false;
@@ -345,13 +400,15 @@ function wireNotifications() {
   if (notificationsWired || !chrome.notifications) return;
   notificationsWired = true;
   chrome.notifications.onClicked.addListener((id) => {
-    if (id !== NOTIFY_EOD && id !== NOTIFY_LOGIN) return;
-    chrome.tabs.create({ url: id === NOTIFY_LOGIN ? LOGIN_URL : EOD_URL });
+    const r = reminderForNotification(id);
+    if (!r) return;
+    chrome.tabs.create({ url: id === r.loginId ? LOGIN_URL : r.url });
     chrome.notifications.clear(id);
   });
   chrome.notifications.onButtonClicked.addListener((id) => {
-    if (id !== NOTIFY_EOD && id !== NOTIFY_LOGIN) return;
-    chrome.alarms.create(SNOOZE_ALARM, { delayInMinutes: 30 });
+    const r = reminderForNotification(id);
+    if (!r) return;
+    chrome.alarms.create(r.snooze, { delayInMinutes: 30 });
     chrome.notifications.clear(id);
   });
 }
@@ -360,7 +417,8 @@ chrome.runtime.onInstalled.addListener(setup);
 chrome.runtime.onStartup.addListener(setup);
 chrome.alarms.onAlarm.addListener(onAlarm);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes[REMINDER_KEY]) scheduleReminder();
+  if (area !== 'sync') return;
+  for (const [kind, r] of Object.entries(REMINDERS)) if (changes[r.key]) scheduleReminder(kind);
 });
 chrome.permissions.onAdded.addListener(wireNotifications);
 wireNotifications();

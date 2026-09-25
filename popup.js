@@ -77,42 +77,13 @@ function showStatus(text, isError = false) {
   statusTimer = setTimeout(() => status.classList.remove('visible'), 2600);
 }
 
-// ---------- EOD reminder ----------
+// ---------- reminders ----------
+// Two sections in Settings with the same controls; background.js schedules them.
 
-const REMINDER_KEY = 'eodReminder';
-const REMINDER_DEFAULTS = { enabled: false, time: '18:30', weekdaysOnly: true };
-const rem = {
-  box: document.querySelector('.reminder'),
-  enabled: document.querySelector('#rem-enabled'),
-  time: document.querySelector('#rem-time'),
-  weekdays: document.querySelector('#rem-weekdays'),
-  preview: document.querySelector('#rem-preview'),
+const REMINDERS = {
+  standup: { key: 'standupReminder', label: 'Standup reminder', defaults: { enabled: false, time: '11:00', weekdaysOnly: true } },
+  eod: { key: 'eodReminder', label: 'EOD reminder', defaults: { enabled: false, time: '18:30', weekdaysOnly: true } },
 };
-let reminder = { ...REMINDER_DEFAULTS };
-
-function renderReminder() {
-  rem.enabled.checked = reminder.enabled;
-  rem.time.value = reminder.time;
-  rem.weekdays.checked = reminder.weekdaysOnly;
-  rem.box.classList.toggle('on', reminder.enabled);
-}
-
-function reminderSummary() {
-  const [h, m] = reminder.time.split(':').map(Number);
-  const at = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  return `EOD reminder on · ${at} ${reminder.weekdaysOnly ? 'on weekdays' : 'every day'}`;
-}
-
-async function saveReminder(changes) {
-  reminder = { ...reminder, ...changes };
-  renderReminder();
-  try {
-    await chrome.storage.sync.set({ [REMINDER_KEY]: reminder });
-    showStatus(reminder.enabled ? reminderSummary() : 'EOD reminder off');
-  } catch (err) {
-    showStatus(`Could not save: ${err.message}`, true);
-  }
-}
 
 // Notifications are an optional permission; Chrome only lets us ask for it
 // straight from a click, so request it before any other await.
@@ -120,28 +91,78 @@ function askForNotifications() {
   return chrome.permissions.request({ permissions: ['notifications'] }).catch(() => false);
 }
 
-rem.enabled.addEventListener('change', () => {
-  if (!rem.enabled.checked) return saveReminder({ enabled: false });
-  askForNotifications().then((granted) => {
-    if (granted) return saveReminder({ enabled: true });
-    rem.enabled.checked = false;
-    showStatus('Allow notifications to use the EOD reminder.', true);
+function setupReminder(kind) {
+  const { key, label, defaults } = REMINDERS[kind];
+  const box = document.querySelector(`.reminder[data-reminder="${kind}"]`);
+  const ui = {
+    enabled: box.querySelector('.rem-enabled'),
+    time: box.querySelector('.rem-time'),
+    weekdays: box.querySelector('.rem-weekdays'),
+    preview: box.querySelector('.rem-preview'),
+  };
+  let reminder = { ...defaults };
+
+  const render = () => {
+    ui.enabled.checked = reminder.enabled;
+    ui.time.value = reminder.time;
+    ui.weekdays.checked = reminder.weekdaysOnly;
+    box.classList.toggle('on', reminder.enabled);
+  };
+
+  const summary = () => {
+    const [h, m] = reminder.time.split(':').map(Number);
+    const at = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `${label} on · ${at} ${reminder.weekdaysOnly ? 'on weekdays' : 'every day'}`;
+  };
+
+  async function save(changes) {
+    reminder = { ...reminder, ...changes };
+    render();
+    try {
+      await chrome.storage.sync.set({ [key]: reminder });
+      showStatus(reminder.enabled ? summary() : `${label} off`);
+    } catch (err) {
+      showStatus(`Could not save: ${err.message}`, true);
+    }
+  }
+
+  ui.enabled.addEventListener('change', () => {
+    if (!ui.enabled.checked) return save({ enabled: false });
+    askForNotifications().then((granted) => {
+      if (granted) return save({ enabled: true });
+      ui.enabled.checked = false;
+      showStatus(`Allow notifications to use the ${label.toLowerCase()}.`, true);
+    });
   });
-});
-rem.time.addEventListener('change', () => {
-  if (/^\d{2}:\d{2}$/.test(rem.time.value)) saveReminder({ time: rem.time.value });
-  else renderReminder();
-});
-rem.weekdays.addEventListener('change', () => saveReminder({ weekdaysOnly: rem.weekdays.checked }));
-rem.preview.addEventListener('click', () => {
-  askForNotifications().then(async (granted) => {
-    if (!granted) return showStatus('Allow notifications to preview the reminder.', true);
-    const res = await chrome.runtime.sendMessage({ type: 'previewReminder' }).catch((err) => ({ ok: false, error: err.message }));
-    if (!res?.ok) showStatus(res?.error || 'Could not show the preview.', true);
-    else if (!res.shown) showStatus(res.reason || 'Could not show the preview.', true);
-    else showStatus('Preview notification sent');
+  ui.time.addEventListener('change', () => {
+    if (/^\d{2}:\d{2}$/.test(ui.time.value)) save({ time: ui.time.value });
+    else render();
   });
-});
+  ui.weekdays.addEventListener('change', () => save({ weekdaysOnly: ui.weekdays.checked }));
+  ui.preview.addEventListener('click', () => {
+    askForNotifications().then(async (granted) => {
+      if (!granted) return showStatus('Allow notifications to preview the reminder.', true);
+      const res = await chrome.runtime.sendMessage({ type: 'previewReminder', payload: { kind } }).catch((err) => ({ ok: false, error: err.message }));
+      if (!res?.ok) showStatus(res?.error || 'Could not show the preview.', true);
+      else if (!res.shown) showStatus(res.reason || 'Could not show the preview.', true);
+      else showStatus('Preview notification sent');
+    });
+  });
+
+  render();
+  Promise.all([chrome.storage.sync.get(key), chrome.permissions.contains({ permissions: ['notifications'] })]).then(
+    ([stored, granted]) => {
+      reminder = { ...defaults, ...stored[key] };
+      // Notifications blocked since it was turned on: show it as off until re-enabled.
+      if (reminder.enabled && !granted) reminder.enabled = false;
+      render();
+    },
+    render,
+  );
+}
+
+setupReminder('standup');
+setupReminder('eod');
 
 // ---------- keyboard shortcuts ----------
 // Bindings belong to Chrome (manifest "commands"); it saves changes and
@@ -182,16 +203,6 @@ document.querySelector('#keys-change').addEventListener('click', () => {
   chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });
 chrome.commands.getAll().then(renderShortcuts, () => {});
-
-Promise.all([chrome.storage.sync.get(REMINDER_KEY), chrome.permissions.contains({ permissions: ['notifications'] })]).then(
-  ([stored, granted]) => {
-    reminder = { ...REMINDER_DEFAULTS, ...stored[REMINDER_KEY] };
-    // Notifications blocked since it was turned on: show it as off until re-enabled.
-    if (reminder.enabled && !granted) reminder.enabled = false;
-    renderReminder();
-  },
-  renderReminder,
-);
 
 grid.append(...ButtonStyles.STYLES.map(card));
 chrome.storage.sync.get(key).then(

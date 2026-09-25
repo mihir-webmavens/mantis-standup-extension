@@ -149,6 +149,7 @@ h2 { margin: 0; font-size: 13px; font-weight: 700; }
   transition: opacity .15s ease;
 }
 .reminder:not(.on) .rem-opts { opacity: .5; }
+.reminder + .reminder { margin-top: 10px; }
 .field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .field input {
   font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px;

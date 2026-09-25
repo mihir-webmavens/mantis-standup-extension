@@ -222,6 +222,92 @@ describe('EOD reminder', () => {
   });
 });
 
+describe('standup reminder', () => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // The fixture's two standups, dated today or yesterday.
+  const datedPage = (date) => FIXTURE.replaceAll('2026-09-25', day(date));
+  const today = () => datedPage(new Date());
+  const yesterday = () => datedPage(new Date(Date.now() - 864e5));
+  const enabled = { standupReminder: { enabled: true } };
+
+  test('defaults to 11:00 on weekdays and is scheduled independently of the EOD reminder', async () => {
+    const bg = loadBackground({ storage: { ...enabled } });
+    await bg.events.installed.fire();
+    await settle();
+    assert.equal(new Date(bg.state.alarms['standup-reminder'].when).toTimeString().slice(0, 5), '11:00');
+    assert.ok(![0, 6].includes(new Date(bg.state.alarms['standup-reminder'].when).getDay()));
+    assert.equal(bg.state.alarms['eod-reminder'], undefined);
+    await bg.events.storage.fire({ standupReminder: {} }, 'sync'); // changing it reschedules only itself
+    await settle();
+    assert.equal(bg.state.alarms['eod-reminder'], undefined);
+  });
+
+  test('notifies when no standup was added today; click opens Mantis', async () => {
+    const bg = loadBackground({ server: fakeStandupServer({ page: yesterday() }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder');
+    await settle();
+    assert.equal(bg.state.notes['standup-reminder'].title, 'No standup added yet today');
+    assert.match(bg.state.notes['standup-reminder'].message, /\+ Standup \(Ctrl\+Shift\+S\)/);
+    await bg.events.noteClicked.fire('standup-reminder');
+    assert.deepEqual(plain(bg.state.tabs), ['https://projects.webmavens.dev/']);
+    assert.equal(typeof bg.state.alarms['standup-reminder'].when, 'number', 'rescheduled for the next day');
+  });
+
+  test('also notifies when the EOD page is empty', async () => {
+    const page = FIXTURE.replace(/<tbody>[\s\S]*?<\/tbody>/, '<tbody></tbody>');
+    const bg = loadBackground({ server: fakeStandupServer({ page }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder');
+    await settle();
+    assert.ok(bg.state.notes['standup-reminder']);
+  });
+
+  test('stays silent once a standup was added today; preview still shows', async () => {
+    const bg = loadBackground({ server: fakeStandupServer({ page: today() }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder');
+    await settle();
+    assert.deepEqual(bg.state.notes, {});
+    assert.deepEqual(await bg.send('previewReminder', { kind: 'standup' }), { ok: true, shown: true, added: 2 });
+    assert.equal(bg.state.notes['standup-reminder'].title, '2 standups added today');
+  });
+
+  test('snoozes for 30 minutes and reminds again', async () => {
+    const bg = loadBackground({ server: fakeStandupServer({ page: yesterday() }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder');
+    await settle();
+    await bg.events.noteButton.fire('standup-reminder');
+    assert.equal(bg.state.alarms['standup-snooze'].delayInMinutes, 30);
+    assert.equal(bg.state.alarms['eod-snooze'], undefined);
+    assert.equal(bg.state.notes['standup-reminder'], undefined);
+    await bg.fireAlarm('standup-snooze');
+    await settle();
+    assert.ok(bg.state.notes['standup-reminder']);
+  });
+
+  test('asks you to log in when it cannot check', async () => {
+    const bg = loadBackground({ server: fakeStandupServer({ loggedIn: false }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder');
+    await settle();
+    assert.equal(bg.state.notes['standup-reminder-login'].title, 'Standup reminder');
+    assert.match(bg.state.notes['standup-reminder-login'].message, /^Couldn't check your standups\. You are not logged into/);
+    await bg.events.noteClicked.fire('standup-reminder-login');
+    assert.deepEqual(plain(bg.state.tabs), [LOGIN_URL]);
+  });
+
+  test('drops a reminder missed while Chrome was closed', async () => {
+    const bg = loadBackground({ server: fakeStandupServer({ page: yesterday() }), storage: { ...enabled } });
+    await bg.grantNotifications();
+    await bg.fireAlarm('standup-reminder', Date.now() - 4 * 3600e3);
+    await settle();
+    assert.deepEqual(bg.state.notes, {});
+  });
+});
+
 describe('keyboard shortcuts', () => {
   test('relay the command to the Mantis tab', async () => {
     const bg = loadBackground({ tabMessage: async () => ({ handled: true }) });

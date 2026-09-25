@@ -121,7 +121,8 @@
     </p>
     <p>
       The extension’s toolbar icon shows how many EODs still have no update. If you turn on the optional
-      <strong>EOD reminder</strong>, Chrome shows you a notification at the time you choose when EODs are still empty.
+      <strong>standup reminder</strong> or <strong>EOD reminder</strong>, Chrome shows you a notification at the time you choose
+      when you have not added a standup today, or when EODs are still empty.
     </p>
   </section>
 
@@ -149,7 +150,7 @@
       page’s form token and your other EOD entries exactly as the site already has them, so those stay unchanged.
     </p>
     <p>
-      For the toolbar count and the reminder, the extension also reads the same EOD page in the background about every
+      For the toolbar count and the reminders, the extension also reads the same EOD page in the background about every
       15 minutes and at reminder time. It only counts the entries; nothing is kept or sent anywhere else. Reminder
       notifications are shown by Chrome on your computer.
     </p>
@@ -163,7 +164,7 @@
     <h2>What it does not do</h2>
     <ul>
       <li>It does not store your standups, EODs or any personal data. The only things it saves are your settings: the button
-        style you pick (a style name such as “neon”) and your EOD reminder choices (on/off, time, weekdays only), kept in
+        style you pick (a style name such as “neon”) and your reminder choices (on/off, time, weekdays only), kept in
         Chrome’s extension storage and synced with your Chrome profile.</li>
       <li>It does not use analytics, tracking or advertising.</li>
       <li>It does not send data to any server other than <code>standup.webmavens.dev</code>.</li>
@@ -177,9 +178,9 @@
     <ul>
       <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the EOD button on its pages and the Standup button on ticket pages, and reads the ticket number and priority.</li>
       <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits standups, reads your EOD entries and saves EOD updates to your account on the standup site.</li>
-      <li><strong>Storage:</strong> remembers the button style and EOD reminder settings you choose from the extension’s toolbar icon.</li>
-      <li><strong>Alarms:</strong> refreshes the pending-EOD count on the toolbar icon and schedules the EOD reminder.</li>
-      <li><strong>Notifications (optional):</strong> asked for only when you turn on the EOD reminder; used to show that reminder.</li>
+      <li><strong>Storage:</strong> remembers the button style and reminder settings you choose from the extension’s toolbar icon.</li>
+      <li><strong>Alarms:</strong> refreshes the pending-EOD count on the toolbar icon and schedules the reminders.</li>
+      <li><strong>Notifications (optional):</strong> asked for only when you turn on a reminder; used to show the reminders.</li>
     </ul>
   </section>
 

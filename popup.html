@@ -34,21 +34,39 @@
     </div>
 
     <div class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-      <section class="reminder" aria-labelledby="rem-title">
+      <section class="reminder" data-reminder="standup" aria-labelledby="sr-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="sr-title">Standup reminder</h2>
+            <p class="sub">A notification if you have not added a standup today.</p>
+          </div>
+          <label class="switch" title="Turn the standup reminder on or off">
+            <input type="checkbox" id="sr-enabled" class="rem-enabled" role="switch" aria-labelledby="sr-title">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="rem-opts">
+          <label class="field">At <input type="time" id="sr-time" class="rem-time" value="11:00" required></label>
+          <label class="check"><input type="checkbox" id="sr-weekdays" class="rem-weekdays" checked> Weekdays only</label>
+          <button type="button" class="link rem-preview" id="sr-preview">Preview</button>
+        </div>
+      </section>
+
+      <section class="reminder" data-reminder="eod" aria-labelledby="rem-title">
         <div class="rem-head">
           <div>
             <h2 id="rem-title">EOD reminder</h2>
             <p class="sub">A notification if any EOD is still empty.</p>
           </div>
           <label class="switch" title="Turn the EOD reminder on or off">
-            <input type="checkbox" id="rem-enabled" role="switch" aria-labelledby="rem-title">
+            <input type="checkbox" id="rem-enabled" class="rem-enabled" role="switch" aria-labelledby="rem-title">
             <span class="track"><span class="thumb"></span></span>
           </label>
         </div>
         <div class="rem-opts">
-          <label class="field">At <input type="time" id="rem-time" value="18:30" required></label>
-          <label class="check"><input type="checkbox" id="rem-weekdays" checked> Weekdays only</label>
-          <button type="button" class="link" id="rem-preview">Preview</button>
+          <label class="field">At <input type="time" id="rem-time" class="rem-time" value="18:30" required></label>
+          <label class="check"><input type="checkbox" id="rem-weekdays" class="rem-weekdays" checked> Weekdays only</label>
+          <button type="button" class="link rem-preview" id="rem-preview">Preview</button>
         </div>
       </section>
 

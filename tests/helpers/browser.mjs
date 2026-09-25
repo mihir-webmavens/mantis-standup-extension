@@ -105,17 +105,16 @@ class Browser {
    * and serves those requests from the test instead of the network.
    */
   async open(url, { width = 1000, height = 700, colorScheme, routes } = {}) {
-    // Extension pages cannot be navigated to from about:blank, so create them directly.
-    const direct = url.startsWith('chrome-extension://');
-    const { targetId } = await this.send('Target.createTarget', { url: direct ? url : 'about:blank' });
+    // Start blank so size, colour scheme and routes apply before the real page loads.
+    const { targetId } = await this.send('Target.createTarget', { url: 'about:blank' });
     const page = await this.attach(targetId);
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     if (colorScheme) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: colorScheme }] });
     if (routes) await page.route(routes);
     await page.send('Page.enable');
     const loaded = page.waitFor('Page.loadEventFired');
-    if (direct) await page.send('Page.reload');
-    else await page.send('Page.navigate', { url });
+    const { errorText } = await page.send('Page.navigate', { url });
+    if (errorText) throw new Error(`Could not open ${url}: ${errorText}`);
     await loaded;
     return page;
   }
@@ -130,7 +129,11 @@ class Browser {
     try { await this.send('Browser.close'); } catch {}
     await exited;
     try { this.ws.close(); } catch {}
-    fs.rmSync(this.userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    // A helper process (e.g. crashpad) can still write to the profile just after exit.
+    for (let i = 0; i < 10 && fs.existsSync(this.userDataDir); i++) {
+      if (i) await sleep(200);
+      fs.rmSync(this.userDataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
   }
 }
 
@@ -178,6 +181,20 @@ class Session {
     const { result, exceptionDetails } = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, userGesture: true });
     if (exceptionDetails) throw new Error(exceptionDetails.exception?.description || exceptionDetails.text);
     return result.value;
+  }
+
+  /** Waits until `expression` is truthy in the page (instead of guessing a delay). */
+  async until(expression, { timeout = 5000, message } = {}) {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      try {
+        if (await this.eval(`Boolean(${expression})`)) return;
+      } catch {
+        // not there yet (e.g. element missing)
+      }
+      if (Date.now() > deadline) throw new Error(message || `Timed out waiting for: ${expression}`);
+      await sleep(50);
+    }
   }
 
   /** A real (trusted) key press. */

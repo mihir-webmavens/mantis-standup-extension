@@ -59,7 +59,7 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
 
   test('toolbar popup opens on the EOD tab and saves an EOD', async () => {
     const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
-    await sleep(500);
+    await popup.until(`document.querySelectorAll('.eod').length === 2`);
     const view = () => popup.eval(`JSON.stringify({
       tab: document.querySelector('.tab[aria-selected=true]').id,
       count: document.querySelector('.tab-count').hidden ? null : document.querySelector('.tab-count').textContent,
@@ -71,11 +71,10 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     assert.equal(await popup.eval('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
 
     await popup.click(`document.querySelector('.eod.pending .pill')`);
-    await sleep(150);
-    assert.equal(await popup.eval('document.activeElement.tagName'), 'TEXTAREA');
+    await popup.until(`document.activeElement.tagName === 'TEXTAREA'`, { message: 'Add EOD did not focus the text box' });
     await popup.eval(`document.activeElement.value = 'Fixed the job & deployed'`);
     await popup.key('Enter');
-    await sleep(1200);
+    await popup.until(`document.querySelector('.eod-saved')`, { message: 'EOD was not saved' });
 
     const posted = server.posts.at(-1);
     assert.equal(posted.path, '/admin/standups/update-standups');
@@ -87,7 +86,7 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
 
     // Esc cancels an edit instead of closing the popup.
     await popup.click(`document.querySelector('.eod .pill')`);
-    await sleep(100);
+    await popup.until(`document.querySelector('.eod-edit textarea') === document.activeElement`);
     await popup.key('Escape');
     assert.equal(await popup.eval(`!document.querySelector('.eod-edit')`), true);
     await popup.close();
@@ -95,7 +94,7 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
 
   test('Settings tab: style picker saves and restyles open Mantis tabs', async () => {
     const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/123', { routes: mantisRoutes });
-    await sleep(500);
+    await mantis.until(`document.querySelector('mantis-quick-standup')`);
     const fabStyle = () => mantis.eval(`(() => {
       const css = document.querySelector('mantis-quick-standup').shadowRoot.querySelector('.fab-style').textContent;
       return ['aurora-glow', 'neon-line', 'candy-bob'].find((k) => css.includes(k));
@@ -105,23 +104,26 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     let popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
     await popup.click(`document.querySelector('#tab-settings')`);
     assert.equal(await popup.eval(`document.querySelectorAll('.card').length`), 10);
+    await popup.until(`document.querySelector('.card.selected')`); // set once the saved style is read
     assert.equal(await popup.eval(`document.querySelector('.card.selected').dataset.id`), 'aurora');
     await popup.eval(`document.querySelector('.card[data-id="neon"]').click()`);
-    await sleep(400);
-    assert.deepEqual(await popup.eval(`chrome.storage.sync.get('buttonStyle')`), { buttonStyle: 'neon' });
-    assert.equal(await fabStyle(), 'neon-line', 'open tab restyled without reload');
+    await popup.until(`chrome.storage.sync.get('buttonStyle').then((v) => v.buttonStyle === 'neon')`);
+    await mantis.until(`document.querySelector('mantis-quick-standup').shadowRoot.querySelector('.fab-style').textContent.includes('neon-line')`,
+      { message: 'open tab was not restyled without reload' });
     await popup.close();
 
     popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`document.querySelector('.card.selected')`);
     assert.equal(await popup.eval(`document.querySelector('.card.selected').dataset.id`), 'neon');
     await popup.eval(`document.querySelector('.card[data-id="aurora"]').click()`);
-    await sleep(300);
+    await popup.until(`chrome.storage.sync.get('buttonStyle').then((v) => v.buttonStyle === 'aurora')`);
     await popup.close();
     await mantis.close();
   });
 
   test('Settings tab lists the keyboard shortcuts Chrome assigned', async () => {
     const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`document.querySelectorAll('.keys li').length === 2`);
     const rows = await popup.eval(`[...document.querySelectorAll('.keys li')].map((li) => [li.querySelector('.what').textContent, [...li.querySelectorAll('kbd')].map((k) => k.textContent).join('+')])`);
     assert.deepEqual(rows, [['Add Standup (Planned Action)', 'Ctrl+Shift+S'], ['EOD list', 'Ctrl+Shift+E']]);
     await popup.close();
@@ -129,11 +131,12 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
 
   test('keyboard shortcuts open the panels on a Mantis ticket page', async () => {
     const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/123', { routes: mantisRoutes });
-    await sleep(500);
+    await mantis.until(`document.querySelector('mantis-quick-standup')`);
     await ext.browser.send('Target.activateTarget', { targetId: mantis.targetId });
     const fire = async (command) => {
       await ext.sw.eval(`chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => handleCommand('${command}', tab))`);
-      await sleep(400);
+      const panel = command === 'open-standup' ? '.panel-standup' : '.panel-eod';
+      await mantis.until(`!document.querySelector('mantis-quick-standup').shadowRoot.querySelector('${panel}').hidden`);
       return mantis.eval(`(() => { const r = document.querySelector('mantis-quick-standup').shadowRoot;
         return { standup: !r.querySelector('.panel-standup').hidden, eod: !r.querySelector('.panel-eod').hidden, focus: r.activeElement?.id || r.activeElement?.className || null }; })()`);
     };
@@ -172,23 +175,51 @@ describe('EOD reminder settings (notifications granted)', { skip: !chromium && '
     })()`);
     assert.deepEqual(await state(), { on: false, alarm: null });
 
-    await popup.click(`document.querySelector('.switch')`);
-    await sleep(800);
+    await popup.click(`document.querySelector('[data-reminder="eod"] .switch')`);
+    await popup.until(`chrome.alarms.get('eod-reminder')`);
     assert.deepEqual(await state(), { on: true, stored: { enabled: true, time: '18:30', weekdaysOnly: true }, alarm: '18:30' });
 
     await popup.eval(`(() => { const t = document.querySelector('#rem-time'); t.value = '17:45'; t.dispatchEvent(new Event('change')); })()`);
     await popup.eval(`document.querySelector('#rem-weekdays').click()`);
-    await sleep(500);
+    await popup.until(`chrome.storage.sync.get('eodReminder').then((v) => v.eodReminder.weekdaysOnly === false && v.eodReminder.time === '17:45')`);
+    await popup.until(`chrome.alarms.get('eod-reminder').then((a) => a && new Date(a.scheduledTime).toTimeString().startsWith('17:45'))`);
     assert.deepEqual(await state(), { on: true, stored: { enabled: true, time: '17:45', weekdaysOnly: false }, alarm: '17:45' });
 
     await popup.click(`document.querySelector('#rem-preview')`);
-    await sleep(1200);
+    await popup.until(`document.querySelector('.status').textContent === 'Preview notification sent'`);
     assert.equal(await popup.eval(`document.querySelector('.status').textContent`), 'Preview notification sent');
     assert.deepEqual(Object.keys(await popup.eval('new Promise((r) => chrome.notifications.getAll(r))')), ['eod-reminder']);
 
     await popup.eval(`document.querySelector('#rem-enabled').click()`);
-    await sleep(500);
+    await popup.until(`chrome.alarms.get('eod-reminder').then((a) => !a)`);
     assert.deepEqual(await state(), { on: false, stored: { enabled: false, time: '17:45', weekdaysOnly: false }, alarm: null });
+    await popup.close();
+  });
+
+  test('the standup reminder is its own switch, 11:00 by default', async () => {
+    const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    const state = () => popup.eval(`(async () => {
+      const alarm = await chrome.alarms.get('standup-reminder');
+      return { on: document.querySelector('#sr-enabled').checked, time: document.querySelector('#sr-time').value,
+        stored: (await chrome.storage.sync.get('standupReminder')).standupReminder,
+        alarm: alarm ? new Date(alarm.scheduledTime).toTimeString().slice(0, 5) : null, eodAlarm: !!(await chrome.alarms.get('eod-reminder')) };
+    })()`);
+    assert.deepEqual(await state(), { on: false, time: '11:00', alarm: null, eodAlarm: false });
+
+    await popup.click(`document.querySelector('[data-reminder="standup"] .switch')`);
+    await popup.until(`chrome.alarms.get('standup-reminder')`);
+    assert.deepEqual(await state(), { on: true, time: '11:00', stored: { enabled: true, time: '11:00', weekdaysOnly: true }, alarm: '11:00', eodAlarm: false });
+    assert.match(await popup.eval(`document.querySelector('.status').textContent`), /^Standup reminder on · 11:00 (AM )?on weekdays$/);
+
+    await popup.click(`document.querySelector('#sr-preview')`);
+    await popup.until(`document.querySelector('.status').textContent === 'Preview notification sent'`);
+    assert.equal(await popup.eval(`document.querySelector('.status').textContent`), 'Preview notification sent');
+    assert.ok(Object.keys(await popup.eval('new Promise((r) => chrome.notifications.getAll(r))')).includes('standup-reminder'));
+
+    await popup.eval(`document.querySelector('#sr-enabled').click()`);
+    await popup.until(`chrome.alarms.get('standup-reminder').then((a) => !a)`);
+    assert.equal((await state()).alarm, null);
     await popup.close();
   });
 });
