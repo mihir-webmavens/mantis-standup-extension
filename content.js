@@ -119,47 +119,9 @@
     }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 
-    /* One button shows at a time; scroll over it to switch (the ↕ hints at that). */
+    /* One button shows at a time; scroll over it to switch (the ↕ hints at that).
+       Its look comes from button-styles.js, chosen in the toolbar popup. */
     .fabs { position: fixed; right: 20px; bottom: 20px; z-index: 2147483646; }
-    .fab-scroll {
-      display: grid; grid-auto-rows: 44px; height: 44px;
-      overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory;
-      scrollbar-width: none; border-radius: 999px;
-      box-shadow: 0 8px 24px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.15);
-      transition: transform .2s ease, box-shadow .2s ease;
-      animation: fab-glow 4s ease-in-out infinite;
-    }
-    .fab-scroll::-webkit-scrollbar { display: none; }
-    .fab-scroll:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(219,39,119,.4), inset 0 0 0 1px rgba(255,255,255,.2); }
-    .fab {
-      position: relative; overflow: hidden; scroll-snap-align: start; width: 100%; height: 44px;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      background: var(--gradient); background-size: 200% 100%; animation: fab-flow 6s linear infinite;
-      color: #fff; border: 0; border-radius: 999px;
-      padding: 0 18px; font-size: 14px; font-weight: 700; letter-spacing: .02em; cursor: pointer; white-space: nowrap;
-      transition: transform .12s ease;
-    }
-    /* Light sweep across the button on hover. */
-    .fab::before {
-      content: ""; position: absolute; top: 0; bottom: 0; left: -75%; width: 50%;
-      background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent);
-      transform: skewX(-20deg); pointer-events: none;
-    }
-    .fab:hover::before { animation: fab-shine .8s ease; }
-    .fab::after { content: "↕"; font-size: 12px; opacity: .75; animation: fab-nudge 2.4s ease-in-out infinite; }
-    .fab:active { transform: scale(.95); }
-    .fab:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
-    @keyframes fab-flow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
-    @keyframes fab-shine { to { left: 130%; } }
-    @keyframes fab-nudge { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(-2px); } 90% { transform: translateY(2px); } }
-    @keyframes fab-glow {
-      0%, 100% { box-shadow: 0 8px 24px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.15); }
-      50% { box-shadow: 0 8px 28px rgba(219,39,119,.45), inset 0 0 0 1px rgba(255,255,255,.15); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .fab, .fab::after, .fab-scroll, .fab:hover::before { animation: none; }
-      .fab-scroll, .fab { transition: none; }
-    }
     .panel {
       position: fixed; right: 20px; bottom: 76px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
@@ -256,6 +218,7 @@
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `
       <style>${CSS}</style>
+      <style class="fab-style">${ButtonStyles.css(ButtonStyles.DEFAULT)}</style>
       <div class="fabs">
         <div class="fab-scroll">
           <button class="fab fab-standup" type="button">+ Standup</button>
@@ -329,7 +292,22 @@
     // On the whole panel: Esc first closes an open EOD editor, then the popup.
     closeOnEscape(ui.eodPanel, () => (eodEdit ? cancelEodEdit() : closeEodPanel()));
 
+    watchButtonStyle(root.querySelector('.fab-style'));
     loadEods();
+  }
+
+  // Applies the style picked in the toolbar popup, now and whenever it changes.
+  function watchButtonStyle(styleEl) {
+    const key = ButtonStyles.STORAGE_KEY;
+    const apply = (id) => { styleEl.textContent = ButtonStyles.css(id); };
+    try {
+      chrome.storage.sync.get(key).then((v) => apply(v[key]), () => {});
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'sync' && changes[key]) apply(changes[key].newValue);
+      });
+    } catch {
+      // Extension reloaded under this page; keep the current look.
+    }
   }
 
   // Esc closes the popup; other keys stay away from Mantis keyboard shortcuts.
