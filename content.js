@@ -222,15 +222,6 @@
     .eod-edit .actions { margin-top: 6px; }
     .eod-edit .submit { padding: 5px 10px; font-size: 12px; }
     .eod-edit .status { margin-top: 6px; }
-    .eod-edit .actions { flex-wrap: wrap; }
-    .eod-edit .hint { flex-basis: 100%; order: 3; text-align: right; margin-top: -2px; }
-    .copy-btn {
-      display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px;
-      border: 1px dashed var(--accent-border); background: var(--accent-soft); color: var(--link);
-      font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;
-    }
-    .copy-btn:hover:not(:disabled) { border-style: solid; border-color: var(--accent); }
-    .copy-btn:disabled { opacity: .5; cursor: default; }
     .eod-foot { margin-top: 10px; font-size: 12px; }
     .eod-foot a { color: var(--link); }
   `;
@@ -533,7 +524,7 @@
     save.addEventListener('click', saveEod);
     const buttons = el('div', 'head-actions');
     buttons.append(cancel, save);
-    actions.append(copyPlannedButton(), buttons, el('span', 'hint', 'Enter to save · Esc to cancel'));
+    actions.append(el('span', 'hint', 'Enter to save · Esc to cancel'), buttons);
     box.append(textarea, actions);
     if (error) {
       const status = el('div');
@@ -541,24 +532,6 @@
       box.append(status);
     }
     return box;
-  }
-
-  // Fills the editor with the morning's planned action as a starting point.
-  // Nothing is saved until the user clicks Save.
-  function copyPlannedButton() {
-    const { textarea, planned, saving } = eodEdit;
-    const button = el('button', 'copy-btn', '⧉ Same as planned');
-    button.type = 'button';
-    button.title = 'Copy the planned action into the EOD';
-    button.disabled = saving || !planned;
-    button.addEventListener('click', () => {
-      textarea.focus();
-      textarea.select();
-      // insertText keeps Ctrl+Z working; fall back to a plain assignment.
-      if (!document.execCommand('insertText', false, planned)) textarea.value = planned;
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    });
-    return button;
   }
 
   function startEodEdit(eod) {
@@ -571,7 +544,7 @@
         saveEod();
       }
     });
-    eodEdit = { id: eod.id, textarea, planned: eod.plannedAction.trim(), saving: false, error: null };
+    eodEdit = { id: eod.id, textarea, saving: false, error: null };
     eodSavedId = null;
     renderEods();
     textarea.focus();
