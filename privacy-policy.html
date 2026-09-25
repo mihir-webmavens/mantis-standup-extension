@@ -1,0 +1,176 @@
+<title>Mantis Quick Standup Privacy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --ink: #151b2c;
+    --muted: #5a6479;
+    --line: #dde2ec;
+    --accent: #2563eb;
+    --accent-soft: #e8efff;
+    --code-bg: #eef1f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f1320;
+      --surface: #161b2b;
+      --ink: #e6e9f2;
+      --muted: #9aa3b8;
+      --line: #2a3145;
+      --accent: #7aa2ff;
+      --accent-soft: #1c2745;
+      --code-bg: #1f2638;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1320;
+    --surface: #161b2b;
+    --ink: #e6e9f2;
+    --muted: #9aa3b8;
+    --line: #2a3145;
+    --accent: #7aa2ff;
+    --accent-soft: #1c2745;
+    --code-bg: #1f2638;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding-inline: 16px;
+    padding-block: 48px 64px;
+  }
+  main { max-width: 42rem; margin: 0 auto; display: grid; gap: 36px; }
+
+  header { display: grid; gap: 12px; }
+  .ext { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; font-weight: 500; }
+  .ext svg { flex: none; }
+  h1 { margin: 0; font-size: clamp(28px, 5vw, 36px); line-height: 1.2; font-weight: 600; text-wrap: balance; }
+  .meta { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .summary {
+    background: var(--accent-soft);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin: 0;
+  }
+
+  section { display: grid; gap: 10px; }
+  h2 { margin: 0; font-size: 19px; font-weight: 600; text-wrap: balance; }
+  p { margin: 0; }
+  ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  td:first-child { font-weight: 500; white-space: nowrap; }
+
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  footer { border-top: 1px solid var(--line); padding-top: 18px; color: var(--muted); font-size: 14px; }
+</style>
+
+<main>
+  <header>
+    <div class="ext">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="5" fill="#2563eb"/>
+        <rect x="6" y="5.5" width="12" height="14.5" rx="1.6" fill="#fff"/>
+        <rect x="9.2" y="4" width="5.6" height="3" rx="1.2" fill="#1d4ed8"/>
+        <path d="M8.6 13l2.4 2.4 4.4-5" fill="none" stroke="#2563eb" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Mantis Quick Standup · Chrome extension
+    </div>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Effective 25 September 2026 · Applies to version 1.0.1 and later</p>
+  </header>
+
+  <p class="summary">
+    Mantis Quick Standup is an internal tool for the Webmavens team. It sends the standup you write
+    to <code>standup.webmavens.dev</code> and nowhere else. It does not track you, store your data, or share it with anyone.
+  </p>
+
+  <section>
+    <h2>What the extension does</h2>
+    <p>
+      On a ticket page at <code>projects.webmavens.dev/tickets/…</code>, the extension adds a “+ Standup” button.
+      When you write a planned action and click <strong>Add Standup</strong>, it creates a standup entry on
+      <code>standup.webmavens.dev</code> for that ticket, using the login you already have on that site.
+    </p>
+  </section>
+
+  <section>
+    <h2>Data it reads and sends</h2>
+    <p>The extension only handles data when you click Add Standup. At that point it uses:</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Data</th><th scope="col">Where it comes from</th><th scope="col">Where it goes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ticket number and link</td><td>The URL of the ticket page you are on</td><td><code>standup.webmavens.dev</code></td></tr>
+          <tr><td>Ticket priority</td><td>Read from the ticket page (Low if none is set)</td><td><code>standup.webmavens.dev</code></td></tr>
+          <tr><td>Planned action</td><td>The text you type into the extension</td><td><code>standup.webmavens.dev</code></td></tr>
+          <tr><td>Form token and user ID</td><td>The standup site’s own “create standup” form</td><td>Sent back to <code>standup.webmavens.dev</code> with the standup</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Requests to <code>standup.webmavens.dev</code> use your existing login session for that site. The extension
+      never reads, copies or stores your password or cookies.
+    </p>
+  </section>
+
+  <section>
+    <h2>What it does not do</h2>
+    <ul>
+      <li>It does not store any data. Nothing is saved in the extension or on your computer.</li>
+      <li>It does not use analytics, tracking or advertising.</li>
+      <li>It does not send data to any server other than <code>standup.webmavens.dev</code>.</li>
+      <li>It does not run on any website other than <code>projects.webmavens.dev</code>.</li>
+      <li>It does not sell or share data with third parties.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Permissions</h2>
+    <ul>
+      <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the Standup button on ticket pages and reads the ticket number and priority.</li>
+      <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits the standup to your account on the standup site.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where your data is kept</h2>
+    <p>
+      Standups you submit are stored by <code>standup.webmavens.dev</code>, the same as standups you add on that
+      site directly. That site’s own policies cover how long they are kept and who can see them.
+    </p>
+  </section>
+
+  <section>
+    <h2>Changes and questions</h2>
+    <p>
+      If this policy changes, the updated version will be published at this address with a new effective date.
+      For questions, contact the Webmavens team that maintains the extension.
+    </p>
+  </section>
+
+  <footer>Mantis Quick Standup is maintained by Webmavens for internal use.</footer>
+</main>
