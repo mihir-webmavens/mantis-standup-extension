@@ -10,10 +10,11 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Mantis Quick Standup: button style",
+    "default_title": "Mantis Quick Standup",
     "default_popup": "popup.html"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
+  "optional_permissions": ["notifications"],
   "host_permissions": ["https://standup.webmavens.dev/*"],
   "background": {
     "service_worker": "background.js"

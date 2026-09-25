@@ -2,19 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Button style</title>
+  <title>Mantis Quick Standup</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
     <img src="icons/icon48.png" alt="" width="36" height="36">
     <div>
-      <h1>Button style</h1>
-      <p>Choose how the Standup / EOD button looks on Mantis ticket pages.</p>
+      <h1>Mantis Quick Standup</h1>
+      <p>EOD reminder and button style.</p>
     </div>
   </header>
 
-  <main class="grid" role="radiogroup" aria-label="Button style"></main>
+  <div class="scroll">
+    <section class="reminder" aria-labelledby="rem-title">
+      <div class="rem-head">
+        <div>
+          <h2 id="rem-title">EOD reminder</h2>
+          <p class="sub">A notification if any EOD is still empty.</p>
+        </div>
+        <label class="switch" title="Turn the EOD reminder on or off">
+          <input type="checkbox" id="rem-enabled" role="switch" aria-labelledby="rem-title">
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+      <div class="rem-opts">
+        <label class="field">At <input type="time" id="rem-time" value="18:30" required></label>
+        <label class="check"><input type="checkbox" id="rem-weekdays" checked> Weekdays only</label>
+        <button type="button" class="link" id="rem-preview">Preview</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="style-title">
+      <h2 id="style-title" class="section-title">Button style</h2>
+      <p class="sub section-sub">How the Standup / EOD button looks on Mantis ticket pages.</p>
+      <div class="grid" role="radiogroup" aria-labelledby="style-title"></div>
+    </section>
+  </div>
 
   <footer>
     <span class="status" role="status" aria-live="polite"></span>

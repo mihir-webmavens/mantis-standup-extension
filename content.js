@@ -146,6 +146,12 @@
       width: 140px; max-width: 100%; height: 26px; padding: 2px 8px;
       border: 1px solid var(--input-border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--card);
     }
+    .dup-note {
+      margin: -2px 0 10px; padding: 7px 9px; border-radius: 6px; font-size: 12px; line-height: 1.4;
+      background: var(--pending-bg); color: var(--pending-text); border: 1px solid var(--pending-border);
+    }
+    .dup-note[hidden] { display: none; }
+    .dup-note strong { font-weight: 700; }
     .m-est:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     label { display: block; font-weight: 600; margin-bottom: 4px; }
     textarea {
@@ -244,6 +250,7 @@
           <dt><label class="dt-label" for="mqs-est">Est Time</label></dt>
           <dd><input id="mqs-est" class="m-est" type="text" value="-" autocomplete="off" aria-label="Est Time"></dd>
         </dl>
+        <div class="dup-note" role="note" hidden></div>
         <label for="mqs-action">Planned Action</label>
         <textarea id="mqs-action" placeholder="Working on the notification issue..."></textarea>
         <div class="actions">
@@ -276,6 +283,7 @@
       priority: root.querySelector('.m-priority'),
       text: root.querySelector('textarea'),
       estTime: root.querySelector('.m-est'),
+      dupNote: root.querySelector('.dup-note'),
       submit: root.querySelector('.submit'),
       status: root.querySelector('.panel-standup .status'),
       eodFab: root.querySelector('.fab-eod'),
@@ -347,6 +355,7 @@
   function openPanel() {
     closeEodPanel();
     refreshMeta();
+    renderDuplicateNotice();
     ui.panel.hidden = false;
     ui.text.focus();
   }
@@ -435,6 +444,41 @@
     ui.eodList.hidden = !eods.length;
     // Re-rendering drops focus from the list; keep it in the panel so Esc still works.
     if (listHadFocus) (eodEdit && focused === eodEdit.textarea ? eodEdit.textarea : ui.eodPanel).focus();
+    renderDuplicateNotice();
+  }
+
+  // Warns (without blocking) when this ticket already has a standup today,
+  // using the EOD list, which holds today's standups.
+  function renderDuplicateNotice() {
+    const today = localDate(new Date());
+    const same = eodState.status === 'ready' && currentTicket
+      ? eodState.eods.filter((e) => eodTicketId(e) === currentTicket && isToday(e.createdAt, today))
+      : [];
+    ui.dupNote.hidden = !same.length;
+    if (!same.length) return;
+    const [first] = same;
+    const time = /\d{2}:\d{2}/.exec(first.createdAt)?.[0];
+    const action = first.plannedAction.length > 70 ? `${first.plannedAction.slice(0, 70)}…` : first.plannedAction;
+    const lead = el('strong', '', same.length === 1
+      ? `Already added today${time ? ` at ${time}` : ''}:`
+      : `${same.length} standups already added today for #${currentTicket}.`);
+    ui.dupNote.replaceChildren(lead, same.length === 1 ? ` “${action}”. Adding again creates another entry.` : ' Adding again creates another entry.');
+  }
+
+  function eodTicketId(eod) {
+    return /^#?(\d+)$/.exec(eod.ticket.trim())?.[1]
+      || /\/tickets\/(\d+)\/?$/.exec(eod.link || '')?.[1]
+      || null;
+  }
+
+  function localDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Entries without a readable date are treated as today's, like the EOD page itself.
+  function isToday(createdAt, today) {
+    const date = /^\d{4}-\d{2}-\d{2}/.exec(createdAt || '')?.[0];
+    return !date || date === today;
   }
 
   function eodItem(eod) {
@@ -600,6 +644,7 @@
       ui.text.value = '';
       ui.estTime.value = '-';
       ui.status.hidden = true;
+      renderDuplicateNotice();
       if (id && !ui.panel.hidden) refreshMeta();
       if (!id) {
         closePanel();

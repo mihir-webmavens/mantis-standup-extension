@@ -118,6 +118,10 @@
       You can edit the EOD update for any of them and click <strong>Save</strong> to update it on
       <code>standup.webmavens.dev</code>.
     </p>
+    <p>
+      The extension’s toolbar icon shows how many EODs still have no update. If you turn on the optional
+      <strong>EOD reminder</strong>, Chrome shows you a notification at the time you choose when EODs are still empty.
+    </p>
   </section>
 
   <section>
@@ -132,6 +136,7 @@
           <tr><td>Ticket number and link</td><td>The URL of the ticket page you are on</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Ticket priority</td><td>Read from the ticket page (Low if none is set)</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Planned action</td><td>The text you type into the extension</td><td><code>standup.webmavens.dev</code></td></tr>
+          <tr><td>Est time</td><td>The text you type into the extension (“-” if left empty)</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Form token and user ID</td><td>The standup site’s own “create standup” form</td><td>Sent back to <code>standup.webmavens.dev</code> with the standup</td></tr>
         </tbody>
       </table>
@@ -143,6 +148,11 @@
       page’s form token and your other EOD entries exactly as the site already has them, so those stay unchanged.
     </p>
     <p>
+      For the toolbar count and the reminder, the extension also reads the same EOD page in the background about every
+      15 minutes and at reminder time. It only counts the entries; nothing is kept or sent anywhere else. Reminder
+      notifications are shown by Chrome on your computer.
+    </p>
+    <p>
       Requests to <code>standup.webmavens.dev</code> use your existing login session for that site. The extension
       never reads, copies or stores your password or cookies.
     </p>
@@ -151,8 +161,9 @@
   <section>
     <h2>What it does not do</h2>
     <ul>
-      <li>It does not store your standups, EODs or any personal data. The only thing it saves is the button style you pick
-        (a style name such as “neon”), kept in Chrome’s extension storage and synced with your Chrome profile.</li>
+      <li>It does not store your standups, EODs or any personal data. The only things it saves are your settings: the button
+        style you pick (a style name such as “neon”) and your EOD reminder choices (on/off, time, weekdays only), kept in
+        Chrome’s extension storage and synced with your Chrome profile.</li>
       <li>It does not use analytics, tracking or advertising.</li>
       <li>It does not send data to any server other than <code>standup.webmavens.dev</code>.</li>
       <li>It does not run on any website other than <code>projects.webmavens.dev</code>.</li>
@@ -165,7 +176,9 @@
     <ul>
       <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the Standup and EOD buttons on ticket pages and reads the ticket number and priority.</li>
       <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits standups, reads your EOD entries and saves EOD updates to your account on the standup site.</li>
-      <li><strong>Storage:</strong> remembers the button style you choose from the extension’s toolbar icon.</li>
+      <li><strong>Storage:</strong> remembers the button style and EOD reminder settings you choose from the extension’s toolbar icon.</li>
+      <li><strong>Alarms:</strong> refreshes the pending-EOD count on the toolbar icon and schedules the EOD reminder.</li>
+      <li><strong>Notifications (optional):</strong> asked for only when you turn on the EOD reminder; used to show that reminder.</li>
     </ul>
   </section>
 
