@@ -4,6 +4,7 @@
 
 const STANDUP_ORIGIN = 'https://standup.webmavens.dev';
 const CREATE_URL = `${STANDUP_ORIGIN}/admin/standups/create`;
+const LOGIN_URL = `${STANDUP_ORIGIN}/login`;
 const INDEX_PATH = '/admin/standups';
 const EOD_URL = `${STANDUP_ORIGIN}/admin/standups/edit-standups`;
 const EOD_FORM_PATH = '/admin/standups/update-standups';
@@ -75,7 +76,7 @@ function fetchCreateForm() {
 async function fetchStandupPage(url, what) {
   const res = await fetch(url, { credentials: 'include', redirect: 'manual' });
   if (res.type === 'opaqueredirect') {
-    throw new Error('You are not logged into standup.webmavens.dev. Log in there, then try again.');
+    throw new Error(`You are not logged into standup.webmavens.dev. Log in at ${LOGIN_URL}, then try again.`);
   }
   if (!res.ok) throw new Error(`Could not open ${what} (HTTP ${res.status}).`);
   return res;

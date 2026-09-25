@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mantis Quick Standup",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Add a standup to standup.webmavens.dev directly from a Mantis ticket page.",
   "icons": {
     "16": "icons/icon16.png",

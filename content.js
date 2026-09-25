@@ -138,6 +138,7 @@
     .status[hidden] { display: none; }
     .status.ok { background: #dcfce7; color: #166534; }
     .status.err { background: #fee2e2; color: #991b1b; }
+    .status a { color: inherit; font-weight: 600; }
     .status.info { background: #f3f4f6; color: #374151; }
     .head-actions { display: flex; align-items: center; gap: 8px; }
     .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: #2563eb; cursor: pointer; }
@@ -291,9 +292,17 @@
     ui.panel.hidden = true;
   }
 
+  // Links to the standup site (e.g. its login page) in messages become clickable.
+  const STANDUP_LINK_RE = /(https:\/\/standup\.webmavens\.dev\/[^\s,]*[^\s,.])/;
+
   function showStatus(kind, message, target = ui.status) {
     target.className = `status ${kind}`;
-    target.textContent = message;
+    target.replaceChildren(...message.split(STANDUP_LINK_RE).map((part, i) => {
+      if (i % 2 === 0) return part;
+      const link = el('a', '', part);
+      Object.assign(link, { href: part, target: '_blank', rel: 'noopener' });
+      return link;
+    }));
     target.hidden = false;
   }
 
