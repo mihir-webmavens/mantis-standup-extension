@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<!-- Sanitized copy of standup.webmavens.dev/admin/standups/edit-standups (Laravel Blade output).
+     Markup and quirks (unquoted href, named submit, hidden create form) match the real page;
+     token, user id and texts are made up. Row 10005 has no EOD yet, row 10006 is filled. -->
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="test-csrf-token">
+    <title>Standup</title>
+</head>
+<body class="sidebar-mini">
+<div class="content-wrapper">
+<section class="content" style="padding-top: 20px">
+<div class="card">
+    <div class="card-body">
+        <div class="form-group">
+            <a class="btn btn-default" href="https://standup.webmavens.dev/admin/standups">
+                Back to list
+            </a>
+        </div>
+
+        <form action="https://standup.webmavens.dev/admin/standups/update-standups" method="POST">
+            <input type="hidden" name="_token" value="test-csrf-token" autocomplete="off">            <table class="table table-bordered table-striped table-hover ajaxTable datatable datatable-Standup">
+                <thead>
+                    <tr>
+                        <th>Github/Mantis ticket #</th>
+                        <th>Planned Action</th>
+                        <th>Repo / Issue Link</th>
+                        <th>Priority</th>
+                        <th>Est Time</th>
+                        <th>Any support needed to complete your tasks</th>
+                        <th>Created at</th>
+                        <th>EOD Updates(Completed Tasks)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                                        <tr>
+                        <td>8386</td>
+                        <td>Fixing the notification job for new sign-ups.</td>
+                        <td>
+
+                                <a href=https://projects.webmavens.dev/tickets/8386 target="_blank">8386</a>
+                                                    </td>
+                        <td>Low</td>
+                        <td>-</td>
+                        <td>No</td>
+                        <td>2026-09-25 10:01:24</td>
+                        <td>
+                            <input type="text" name="evening_updates[10005]" value="" id="evening_updates_10005" class="form-control">
+                        </td>
+                    </tr>
+                                        <tr>
+                        <td>8390</td>
+                        <td>Reviewing the billing export &amp; CSV format.</td>
+                        <td>
+
+                                <a href=https://projects.webmavens.dev/tickets/8390 target="_blank">8390</a>
+                                                    </td>
+                        <td>High</td>
+                        <td>2h</td>
+                        <td>No</td>
+                        <td>2026-09-25 11:30:02</td>
+                        <td>
+                            <input type="text" name="evening_updates[10006]" value="Reviewed &amp; merged" id="evening_updates_10006" class="form-control">
+                        </td>
+                    </tr>
+
+                </tbody>
+            </table>
+
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <input type="submit" value="Submit" name="submit" class="btn btn-primary">
+                <button onclick="toggleForm(event)" class="btn btn-default mt-2">
+                    Add EOD Standup
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="card" style="display: none;" id="hidden-form">
+    <div class="card-header">
+        Create Standup
+    </div>
+
+    <div class="card-body">
+        <form method="POST" action="https://standup.webmavens.dev/admin/standups" enctype="multipart/form-data">
+            <input type="hidden" name="_token" value="test-csrf-token" autocomplete="off">            <div class="form-group">
+                <input type="hidden" name="user_id" value="7">
+
+                                <span class="help-block"> </span>
+            </div>
+            <div class="d-flex justify-content-between">
+                <div class="form-group">
+                    <input class="form-control " type="text" name="ticket" id="ticket" value="" placeholder="Github/Mantis ticket #" required>
+                                        <span class="help-block"> </span>
+                </div>
+                <div class="form-group">
+                    <input class="form-control " type="text" name="planned_action" id="planned_action" value="" placeholder="Planned Action "required>
+                                        <span class="help-block"> </span>
+                </div>
+                <div class="form-group">
+                    <input class="form-control " type="text" name="repo_link" id="repo_link" value="" placeholder="Repo / Issue Link "required>
+                                        <span class="help-block"></span>
+                </div>
+                <div class="form-group">
+                    <select class="form-control " name="priority" id="priority" required>
+                        <option value disabled selected>Please select priority</option>
+                                                    <option value="Low" >Low</option>
+                                                    <option value="Medium" >Medium</option>
+                                                    <option value="High" >High</option>
+                                            </select>
+                                        <span class="help-block"> </span>
+                </div>
+                <div class="form-group">
+                    <input class="form-control " type="text" name="est_time" id="est_time" value="" placeholder="Est Time" required>
+                                        <span class="help-block"> </span>
+                </div>
+                <div class="form-group">
+                    <input class="form-control " type="text" name="support_needed" id="support_needed" value="No" placeholder="Any support needed to complete your tasks">
+                                        <span class="help-block"> </span>
+                </div>
+                <div class="form-group">
+                    <input class="form-control " type="text" name="blockers_challenges" id="blockers_challenges" value="none" placeholder="Blockers Challenges">
+                                        <span class="help-block"> </span>
+                </div>
+            </div>
+            <div class="form-group">
+                <button class="btn btn-danger" type="submit">
+                    Save
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+</section>
+</div>
+<form id="logoutform" action="https://standup.webmavens.dev/logout" method="POST" style="display: none;">
+    <input type="hidden" name="_token" value="test-csrf-token" autocomplete="off">
+</form>
+</body>
+</html>

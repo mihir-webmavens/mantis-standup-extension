@@ -1,0 +1,15 @@
+{
+  "name": "mantis-quick-standup",
+  "private": true,
+  "description": "Chrome extension: add standups and EOD updates to standup.webmavens.dev from Mantis.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test 'tests/**/*.test.mjs'",
+    "test:unit": "node --test 'tests/unit/**/*.test.mjs'",
+    "test:ui": "node --test 'tests/ui/**/*.test.mjs'",
+    "test:extension": "node --test 'tests/extension/**/*.test.mjs'"
+  }
+}

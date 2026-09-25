@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- Stand-in Mantis page for the UI tests. Served at https://projects.webmavens.dev/<path>
+     by the test driver, it runs the real content.js with a fake `chrome` API.
+     Query options:
+       n=<count>     number of EODs (odd ones filled)     allfilled=1  every EOD filled
+       dup=<count>   same-day standups for ticket 123     prio=<level> ticket shows this priority
+       err=1         EOD list fails (logged out)          saveerr=1    saving an EOD fails -->
+<html>
+<head><meta charset="utf-8"><title>Mantis</title></head>
+<body style="margin:0;height:100vh;background:#f9fafb;font-family:sans-serif">
+  <h1 style="padding:20px;margin:0">Mantis page</h1>
+  <script>
+    const q = new URLSearchParams(location.search);
+    if (q.get('prio')) document.body.insertAdjacentHTML('beforeend', `<div><span>Priority</span><span>${q.get('prio')}</span></div>`);
+
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const today = day(new Date());
+    const eods = Array.from({ length: Number(q.get('n') ?? 3) }, (_, i) => ({
+      id: String(10000 + i), ticket: String(8380 + i), link: `https://projects.webmavens.dev/tickets/${8380 + i}`,
+      plannedAction: `Planned action ${i}`, priority: ['Low', 'Medium', 'High'][i % 3], estTime: '-',
+      createdAt: `${today} 10:0${i % 10}:00`, update: i % 2 ? `Done <b>${i}</b> & shipped` : '',
+    }));
+    if (q.get('allfilled')) eods.forEach((e) => { e.update = e.update || 'done'; });
+    for (let i = 0; i < Number(q.get('dup') || 0); i++) {
+      eods.push({ id: `2000${i}`, ticket: '123', link: 'https://projects.webmavens.dev/tickets/123', plannedAction: `Investigating the login redirect loop on staging that happens after the session times out (${i})`, priority: 'High', estTime: '2h', createdAt: `${today} 0${9 + i}:1${i}:00`, update: '' });
+    }
+    if (q.get('dup')) {
+      eods.push({ id: '19999', ticket: '123', link: 'https://projects.webmavens.dev/tickets/123', plannedAction: 'Yesterday', priority: 'High', estTime: '-', createdAt: `${day(new Date(Date.now() - 864e5))} 10:00:00`, update: 'done' });
+      eods.push({ id: '19998', ticket: '1234', link: 'https://github.com/acme/app/issues/123', plannedAction: 'Other ticket', priority: 'Low', estTime: '-', createdAt: `${today} 11:00:00`, update: '' });
+    }
+
+    // What the tests can inspect.
+    window.T = {
+      sent: [], payloads: [], leaked: 0, onMessage: null,
+      root: () => document.querySelector('mantis-quick-standup').shadowRoot,
+      wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+      // Synthetic key event on the focused element inside the extension UI.
+      key: (key, init = {}) => (T.root().activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init })),
+      // Sends a message the way background.js relays a keyboard shortcut.
+      shortcut: (command) => new Promise((resolve) => T.onMessage({ type: 'shortcut', command }, {}, resolve)),
+    };
+    document.addEventListener('keydown', () => T.leaked++); // stands in for Mantis's own shortcuts
+
+    // Chrome already defines window.chrome on pages (writable, not configurable); replace it.
+    window.chrome = {
+      storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+      runtime: {
+        onMessage: { addListener: (f) => { T.onMessage = f; } },
+        sendMessage: async ({ type, payload }) => {
+          T.sent.push(type);
+          T.payloads.push(payload);
+          await T.wait(30);
+          if (type === 'fetchEods') {
+            return q.get('err')
+              ? { ok: false, error: 'You are not logged into standup.webmavens.dev. Log in at https://standup.webmavens.dev/login, then try again.' }
+              : { ok: true, eods: structuredClone(eods) };
+          }
+          if (type === 'submitStandup') return { ok: true };
+          if (type === 'updateEod') {
+            await T.wait(100);
+            if (q.get('saveerr')) return { ok: false, error: 'Standup session expired. Reload standup.webmavens.dev and try again.' };
+            eods.find((e) => e.id === payload.id).update = payload.update.replace(/\s+/g, ' ').trim();
+            return { ok: true, eods: structuredClone(eods) };
+          }
+        },
+      },
+    };
+  </script>
+  <script src="/button-styles.js"></script>
+  <script src="/content.js"></script>
+</body>
+</html>
