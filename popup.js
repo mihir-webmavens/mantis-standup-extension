@@ -143,6 +143,46 @@ rem.preview.addEventListener('click', () => {
   });
 });
 
+// ---------- keyboard shortcuts ----------
+// Bindings belong to Chrome (manifest "commands"); it saves changes and
+// rejects keys already in use, leaving a conflicting default unset.
+
+const SHORTCUT_LABELS = { 'open-standup': 'Add Standup (Planned Action)', 'open-eod': 'EOD list' };
+const SHORTCUT_DEFAULTS = { 'open-standup': 'Ctrl+Shift+S', 'open-eod': 'Ctrl+Shift+E' };
+
+function renderShortcuts(commands) {
+  const list = document.querySelector('.keys');
+  const order = Object.keys(SHORTCUT_LABELS);
+  const ours = commands.filter((c) => SHORTCUT_LABELS[c.name]).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+  list.replaceChildren(...ours.map((c) => {
+    const li = document.createElement('li');
+    const what = document.createElement('span');
+    what.className = 'what';
+    what.textContent = SHORTCUT_LABELS[c.name];
+    const combo = document.createElement('span');
+    combo.className = 'combo';
+    if (c.shortcut) {
+      // Chrome reports e.g. "Ctrl+Shift+S" (or "⇧⌘S" on macOS).
+      const keys = c.shortcut.includes('+') ? c.shortcut.split('+') : [...c.shortcut];
+      combo.append(...keys.map((k) => Object.assign(document.createElement('kbd'), { textContent: k })));
+    } else {
+      combo.append(Object.assign(document.createElement('span'), { className: 'unset', textContent: 'Not set' }));
+      const warn = Object.assign(document.createElement('span'), {
+        className: 'warn',
+        textContent: `${SHORTCUT_DEFAULTS[c.name]} is taken by Chrome or another extension. Click Change to pick another.`,
+      });
+      what.append(warn);
+    }
+    li.append(what, combo);
+    return li;
+  }));
+}
+
+document.querySelector('#keys-change').addEventListener('click', () => {
+  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+});
+chrome.commands.getAll().then(renderShortcuts, () => {});
+
 Promise.all([chrome.storage.sync.get(REMINDER_KEY), chrome.permissions.contains({ permissions: ['notifications'] })]).then(
   ([stored, granted]) => {
     reminder = { ...REMINDER_DEFAULTS, ...stored[REMINDER_KEY] };

@@ -364,3 +364,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 chrome.permissions.onAdded.addListener(wireNotifications);
 wireNotifications();
+
+// ---------- keyboard shortcuts ----------
+// Chrome owns the key bindings (manifest "commands"): users change them at
+// chrome://extensions/shortcuts, Chrome keeps them and refuses keys already in
+// use. The Mantis tab's content script opens the matching panel.
+
+const SHORTCUT_COMMANDS = ['open-standup', 'open-eod'];
+
+async function handleCommand(command, tab) {
+  if (!SHORTCUT_COMMANDS.includes(command) || !tab?.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'shortcut', command });
+  } catch {
+    // Not a Mantis page (no content script there): nothing to open.
+  }
+}
+
+chrome.commands.onCommand.addListener(handleCommand);

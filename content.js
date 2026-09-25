@@ -680,6 +680,15 @@
     }
   }
 
+  // Keyboard shortcuts (see "commands" in manifest.json), relayed by background.js.
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== 'shortcut') return;
+    if (!host || !currentTicket) return sendResponse({ handled: false }); // not a ticket page
+    if (msg.command === 'open-standup') openPanel();
+    else if (msg.command === 'open-eod') openEodPanel();
+    sendResponse({ handled: true });
+  });
+
   sync();
   setInterval(sync, 1000);
   // Pick up EODs added or filled in from another tab.

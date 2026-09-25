@@ -61,6 +61,25 @@ h2 { margin: 0; font-size: 13px; font-weight: 700; }
 .link { margin-left: auto; background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--accent); cursor: pointer; }
 .link:hover { text-decoration: underline; }
 
+/* Keyboard shortcuts */
+.shortcuts {
+  margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  box-shadow: var(--shadow);
+}
+.keys-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.keys-head .link { margin-left: 0; }
+.keys { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.keys li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.keys .what { color: var(--text); }
+.combo { display: flex; gap: 3px; flex: none; }
+kbd {
+  min-width: 22px; padding: 2px 6px; border-radius: 5px; text-align: center;
+  font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); box-shadow: inset 0 -1px 0 var(--border);
+}
+.unset { font-size: 11px; font-weight: 600; color: var(--error); }
+.keys .warn { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+
 .switch { position: relative; flex: none; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .track {

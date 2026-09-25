@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mantis Quick Standup",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Add a standup to standup.webmavens.dev directly from a Mantis ticket page.",
   "icons": {
     "16": "icons/icon16.png",
@@ -18,6 +18,16 @@
   "host_permissions": ["https://standup.webmavens.dev/*"],
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "open-standup": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Open Add Standup and focus Planned Action"
+    },
+    "open-eod": {
+      "suggested_key": { "default": "Ctrl+Shift+E" },
+      "description": "Open the EOD list"
+    }
   },
   "content_scripts": [
     {
