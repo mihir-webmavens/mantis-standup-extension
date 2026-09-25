@@ -1,5 +1,5 @@
-// Adds a small "Standup" overlay, plus a read-only "EOD" list of today's
-// standups, to Mantis ticket pages (https://projects.webmavens.dev/tickets/{id}).
+// Adds a small "Standup" overlay, plus an "EOD" list of today's standups
+// whose EOD updates can be edited, to Mantis ticket pages (https://projects.webmavens.dev/tickets/{id}).
 
 (() => {
   const TICKET_PATH_RE = /^\/tickets\/(\d+)\/?$/;
@@ -11,6 +11,8 @@
   // Single source for both the EOD button count and the EOD list.
   let eodState = { status: 'idle', eods: [], error: null };
   let eodRequest = 0;
+  let eodEdit = null; // { id, textarea, saving, error } for the entry being edited
+  let eodSavedId = null; // briefly marks the entry that was just saved
 
   // ---------- ticket + priority detection ----------
 
@@ -151,6 +153,15 @@
     .eod-action { color: #111827; word-break: break-word; }
     .eod-update { margin-top: 4px; font-size: 12px; color: #166534; word-break: break-word; }
     .eod-update.empty { color: #9ca3af; font-style: italic; }
+    .eod-update-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .link-btn { background: none; border: 0; padding: 0; font-size: 12px; color: #2563eb; cursor: pointer; white-space: nowrap; margin-top: 4px; }
+    .link-btn:disabled { color: #9ca3af; cursor: default; }
+    .eod-saved { margin-top: 4px; font-size: 11px; color: #166534; }
+    .eod-edit { margin-top: 6px; }
+    .eod-edit textarea { min-height: 60px; }
+    .eod-edit .actions { margin-top: 6px; }
+    .eod-edit .submit { padding: 5px 10px; font-size: 12px; }
+    .eod-edit .status { margin-top: 6px; }
     .eod-foot { margin-top: 10px; font-size: 12px; }
     .eod-foot a { color: #2563eb; }
   `;
@@ -339,9 +350,12 @@
     else if (status === 'ready' && !eods.length) showStatus('info', 'No EODs available.', ui.eodStatus);
     else if (status !== 'loading') ui.eodStatus.hidden = true;
 
-    if (status === 'loading') return; // keep the previous list visible while refreshing
+    // While loading, eods still holds the previous list, so it stays visible.
+    if (eodEdit && status === 'ready' && !eods.some((e) => e.id === eodEdit.id)) eodEdit = null;
+    const refocus = eodEdit && ui.eodList.getRootNode().activeElement === eodEdit.textarea;
     ui.eodList.replaceChildren(...eods.map(eodItem));
     ui.eodList.hidden = !eods.length;
+    if (refocus) eodEdit.textarea.focus();
   }
 
   function eodItem(eod) {
@@ -350,9 +364,99 @@
     const ticket = eod.link ? el('a', '', `#${eod.ticket}`) : el('strong', '', `#${eod.ticket}`);
     if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
     top.append(ticket, el('span', 'eod-sub', [eod.priority, eod.createdAt].filter(Boolean).join(' · ')));
+    li.append(top, el('div', 'eod-action', eod.plannedAction));
+
+    if (eodEdit?.id === eod.id) {
+      li.append(eodEditor());
+      return li;
+    }
+    const row = el('div', 'eod-update-row');
     const update = el('div', `eod-update${eod.update ? '' : ' empty'}`, eod.update ? `EOD: ${eod.update}` : 'EOD not filled yet');
-    li.append(top, el('div', 'eod-action', eod.plannedAction), update);
+    const edit = el('button', 'link-btn', eod.update ? 'Edit' : 'Add EOD');
+    edit.type = 'button';
+    edit.disabled = Boolean(eodEdit?.saving);
+    edit.addEventListener('click', () => startEodEdit(eod));
+    row.append(update, edit);
+    li.append(row);
+    if (eodSavedId === eod.id) li.append(el('div', 'eod-saved', '✓ EOD saved.'));
     return li;
+  }
+
+  // The textarea is kept across re-renders so a background refresh never
+  // loses the draft or the cursor position.
+  function eodEditor() {
+    const { textarea, saving, error } = eodEdit;
+    textarea.disabled = saving;
+    const box = el('div', 'eod-edit');
+    const actions = el('div', 'actions');
+    const cancel = el('button', 'link-btn', 'Cancel');
+    const save = el('button', 'submit', saving ? 'Saving…' : 'Save');
+    cancel.type = save.type = 'button';
+    cancel.disabled = save.disabled = saving;
+    cancel.addEventListener('click', cancelEodEdit);
+    save.addEventListener('click', saveEod);
+    const buttons = el('div', 'head-actions');
+    buttons.append(cancel, save);
+    actions.append(el('span', 'hint', 'Enter to save · Esc to cancel'), buttons);
+    box.append(textarea, actions);
+    if (error) {
+      const status = el('div');
+      showStatus('err', error, status);
+      box.append(status);
+    }
+    return box;
+  }
+
+  function startEodEdit(eod) {
+    const textarea = el('textarea');
+    textarea.value = eod.update;
+    textarea.placeholder = 'What did you complete today?';
+    textarea.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // keep Mantis shortcuts and the panel's Esc handler out of it
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // the server field is single-line
+        saveEod();
+      }
+      if (e.key === 'Escape') cancelEodEdit();
+    });
+    eodEdit = { id: eod.id, textarea, saving: false, error: null };
+    eodSavedId = null;
+    renderEods();
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
+
+  function cancelEodEdit() {
+    if (eodEdit?.saving) return;
+    eodEdit = null;
+    renderEods();
+  }
+
+  async function saveEod() {
+    const edit = eodEdit;
+    if (!edit || edit.saving) return;
+    edit.saving = true;
+    edit.error = null;
+    renderEods();
+
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'updateEod', payload: { id: edit.id, update: edit.textarea.value } });
+      if (!res?.ok) throw new Error(res?.error || 'Unknown error; EOD may not have been saved.');
+      eodRequest++; // the saved page is newer than any load still in flight
+      eodState = { status: 'ready', eods: res.eods, error: null };
+      eodEdit = null;
+      eodSavedId = edit.id;
+      setTimeout(() => {
+        if (eodSavedId !== edit.id) return;
+        eodSavedId = null;
+        renderEods();
+      }, 4000);
+    } catch (err) {
+      edit.saving = false;
+      edit.error = extensionError(err);
+    }
+    renderEods();
+    if (eodEdit === edit) edit.textarea.focus();
   }
 
   function el(tag, className, text) {

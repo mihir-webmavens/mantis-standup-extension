@@ -98,11 +98,11 @@
       Mantis Quick Standup · Chrome extension
     </div>
     <h1>Privacy Policy</h1>
-    <p class="meta">Effective 25 September 2026 · Applies to version 1.0.1 and later</p>
+    <p class="meta">Effective 25 September 2026 · Applies to version 1.1.0 and later</p>
   </header>
 
   <p class="summary">
-    Mantis Quick Standup is an internal tool for the Webmavens team. It sends the standup you write
+    Mantis Quick Standup is an internal tool for the Webmavens team. It sends the standups and EOD updates you write
     to <code>standup.webmavens.dev</code> and nowhere else. It does not track you, store your data, or share it with anyone.
   </p>
 
@@ -113,11 +113,16 @@
       When you write a planned action and click <strong>Add Standup</strong>, it creates a standup entry on
       <code>standup.webmavens.dev</code> for that ticket, using the login you already have on that site.
     </p>
+    <p>
+      It also adds an “EOD” button that lists today’s standups from the standup site’s EOD page, with a count.
+      You can edit the EOD update for any of them and click <strong>Save</strong> to update it on
+      <code>standup.webmavens.dev</code>.
+    </p>
   </section>
 
   <section>
     <h2>Data it reads and sends</h2>
-    <p>The extension only handles data when you click Add Standup. At that point it uses:</p>
+    <p>When you click Add Standup, the extension uses:</p>
     <div class="table-wrap">
       <table>
         <thead>
@@ -131,6 +136,12 @@
         </tbody>
       </table>
     </div>
+    <p>
+      To show the EOD button and list, it reads your EOD entries (ticket, planned action, priority, time and
+      EOD update) from <code>standup.webmavens.dev</code> and shows them only inside the extension on your screen.
+      When you save an EOD, the text you typed is sent to <code>standup.webmavens.dev</code>, together with that
+      page’s form token and your other EOD entries exactly as the site already has them, so those stay unchanged.
+    </p>
     <p>
       Requests to <code>standup.webmavens.dev</code> use your existing login session for that site. The extension
       never reads, copies or stores your password or cookies.
@@ -151,15 +162,15 @@
   <section>
     <h2>Permissions</h2>
     <ul>
-      <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the Standup button on ticket pages and reads the ticket number and priority.</li>
-      <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits the standup to your account on the standup site.</li>
+      <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the Standup and EOD buttons on ticket pages and reads the ticket number and priority.</li>
+      <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits standups, reads your EOD entries and saves EOD updates to your account on the standup site.</li>
     </ul>
   </section>
 
   <section>
     <h2>Where your data is kept</h2>
     <p>
-      Standups you submit are stored by <code>standup.webmavens.dev</code>, the same as standups you add on that
+      Standups and EOD updates you submit are stored by <code>standup.webmavens.dev</code>, the same as standups you add on that
       site directly. That site’s own policies cover how long they are kept and who can see them.
     </p>
   </section>

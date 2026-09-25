@@ -11,6 +11,7 @@ const EOD_FORM_PATH = '/admin/standups/update-standups';
 const HANDLERS = {
   submitStandup: (payload) => submitStandup(payload).then(() => ({})),
   fetchEods: () => fetchEods().then((eods) => ({ eods })),
+  updateEod: (payload) => updateEod(payload).then((eods) => ({ eods })),
 };
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -31,7 +32,7 @@ async function submitStandup({ ticket, plannedAction, repoLink, priority }) {
   // 1. Load the create form to get a fresh CSRF token, user_id and the
   //    form's own defaults for support_needed / blockers_challenges.
   const createRes = await fetchCreateForm();
-  const form = parseStandupForm(await createRes.text());
+  const form = parseForm(await createRes.text(), INDEX_PATH);
   if (!form) throw new Error('Could not find the standup form on standup.webmavens.dev.');
   if (!form.fields._token) throw new Error('Standup form has no CSRF token; cannot submit.');
   if (!form.fields.user_id) throw new Error('Standup form has no user_id; cannot submit.');
@@ -83,8 +84,10 @@ async function fetchStandupPage(url, what) {
 // Each EOD is a row of the update-standups form that carries an
 // evening_updates[<id>] input; columns are located by their header text.
 async function fetchEods() {
-  const html = await (await fetchStandupPage(EOD_URL, 'the EOD page')).text();
+  return parseEods(await (await fetchStandupPage(EOD_URL, 'the EOD page')).text());
+}
 
+function parseEods(html) {
   const form = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)].find(([, attrs]) => {
     const action = attr(attrs, 'action');
     return action && new URL(action, STANDUP_ORIGIN).pathname.replace(/\/$/, '') === EOD_FORM_PATH;
@@ -129,18 +132,57 @@ async function fetchEods() {
   return eods;
 }
 
+// The EOD page saves every row in one form, so resend all rows exactly as the
+// server rendered them and change only the one being edited.
+async function updateEod({ id, update }) {
+  if (!/^\d+$/.test(String(id)) || typeof update !== 'string') throw new Error('Invalid EOD update; nothing was saved.');
+  const field = `evening_updates[${id}]`;
+  const value = update.replace(/\s+/g, ' ').trim(); // the server field is a single-line input
+
+  const form = parseForm(await (await fetchStandupPage(EOD_URL, 'the EOD page')).text(), EOD_FORM_PATH);
+  if (!form) throw new Error('Could not find the EOD form on standup.webmavens.dev.');
+  if (!form.fields._token) throw new Error('EOD form has no CSRF token; cannot save.');
+  if (!(field in form.fields)) throw new Error('This EOD is no longer on the EOD page. Refresh the list.');
+
+  const body = new URLSearchParams(form.fields);
+  body.set(field, value);
+  body.set('submit', 'Submit'); // the form's named submit button
+
+  // Redirects are not followed; see submitStandup.
+  const res = await fetch(form.action, { method: 'POST', credentials: 'include', body, redirect: 'manual' });
+  if (res.status === 419) throw new Error('Standup session expired. Reload standup.webmavens.dev and try again.');
+  if (res.type !== 'opaqueredirect') {
+    const errors = res.ok ? extractErrors(await res.text()) : [];
+    throw new Error(errors.length
+      ? `EOD not saved: ${errors.join(' ')}`
+      : `EOD not saved (unexpected HTTP ${res.status} response).`);
+  }
+
+  // Confirm against a fresh copy of the page rather than trusting the redirect.
+  const html = await (await fetchStandupPage(EOD_URL, 'the EOD page')).text();
+  const errors = extractErrors(html);
+  if (errors.length) throw new Error(`EOD not saved: ${errors.join(' ')}`);
+  const eods = parseEods(html);
+  const saved = eods.find((e) => e.id === String(id));
+  if (saved && saved.update.trim() !== value) {
+    throw new Error('The server did not keep the new EOD text. Check the EOD page and try again.');
+  }
+  return eods;
+}
+
 function cellText(html) {
   return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 
 // DOMParser is not available in MV3 service workers, so parse with regexes.
-// The form is server-rendered Blade, which keeps this predictable.
-function parseStandupForm(html) {
+// The forms are server-rendered Blade, which keeps this predictable.
+// Returns the first form posting to `path`, with the values it would submit.
+function parseForm(html, path) {
   const formMatch = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
   let m;
   while ((m = formMatch.exec(html))) {
     const action = attr(m[1], 'action');
-    if (!action || new URL(action, STANDUP_ORIGIN).pathname.replace(/\/$/, '') !== INDEX_PATH) continue;
+    if (!action || new URL(action, STANDUP_ORIGIN).pathname.replace(/\/$/, '') !== path) continue;
 
     const inner = m[2];
     const fields = {};
