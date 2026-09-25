@@ -10,12 +10,13 @@
     <img src="icons/icon48.png" alt="" width="36" height="36">
     <div>
       <h1>Mantis Quick Standup</h1>
-      <p>Today's EODs and settings.</p>
+      <p>Add standups, today's EODs and settings.</p>
     </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" class="tab" role="tab" id="tab-eod" aria-controls="pane-eod" aria-selected="true">EOD <span class="tab-count" hidden></span></button>
+    <button type="button" class="tab" role="tab" id="tab-standup" aria-controls="pane-standup" aria-selected="false" tabindex="-1">Add Standup</button>
     <button type="button" class="tab" role="tab" id="tab-settings" aria-controls="pane-settings" aria-selected="false" tabindex="-1">Settings</button>
   </nav>
 
@@ -31,6 +32,42 @@
       <div class="eod-status" hidden></div>
       <ul class="eod-list"></ul>
       <a class="eod-page" href="https://standup.webmavens.dev/admin/standups/edit-standups" target="_blank" rel="noopener">Open the EOD page on standup.webmavens.dev ↗</a>
+    </div>
+
+    <div class="pane" id="pane-standup" role="tabpanel" aria-labelledby="tab-standup" hidden>
+      <form class="standup-form" novalidate>
+        <label class="f">Github/Mantis ticket #
+          <input type="text" id="su-ticket" autocomplete="off" required placeholder="e.g. 1234">
+        </label>
+        <label class="f">Planned Action
+          <textarea id="su-action" required placeholder="Working on the notification issue..."></textarea>
+        </label>
+        <label class="f">Repo / Issue Link
+          <input type="url" id="su-link" autocomplete="off" required placeholder="https://…">
+        </label>
+        <div class="f-row">
+          <label class="f">Priority
+            <select id="su-priority">
+              <option value="High">High</option><option value="Medium">Medium</option><option value="Low" selected>Low</option>
+            </select>
+          </label>
+          <label class="f">Est Time
+            <input type="text" id="su-est" autocomplete="off" value="-">
+          </label>
+        </div>
+        <label class="f">Any support needed to complete your tasks
+          <input type="text" id="su-support" autocomplete="off" value="No">
+        </label>
+        <label class="f">Blockers Challenges
+          <input type="text" id="su-blockers" autocomplete="off" value="None">
+        </label>
+        <div class="dup-note" role="note" hidden></div>
+        <div class="eod-edit-actions">
+          <span class="hint">Ctrl+Enter to send</span>
+          <button type="submit" class="save" id="su-submit">Add Standup</button>
+        </div>
+        <div class="su-status" role="status" hidden></div>
+      </form>
     </div>
 
     <div class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
@@ -74,7 +111,7 @@
         <div class="keys-head">
           <div>
             <h2 id="keys-title">Keyboard shortcuts</h2>
-            <p class="sub">Work on Mantis ticket pages.</p>
+            <p class="sub">Add Standup works on any page; on Mantis tickets it opens the ticket's panel.</p>
           </div>
           <button type="button" class="link" id="keys-change">Change</button>
         </div>

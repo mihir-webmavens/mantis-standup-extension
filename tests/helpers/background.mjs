@@ -62,7 +62,7 @@ function event() {
 
 /** Loads background.js. `notifications: true` means the optional permission is granted. */
 export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage } = {}) {
-  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [] };
+  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {} };
   const events = {
     message: event(), installed: event(), startup: event(), alarm: event(), storage: event(),
     permAdded: event(), command: event(), noteClicked: event(), noteButton: event(),
@@ -86,7 +86,11 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
       clear: async (name) => delete state.alarms[name],
       onAlarm: events.alarm,
     },
-    storage: { sync: { get: async (key) => ({ [key]: storage[key] }) }, onChanged: events.storage },
+    storage: {
+      sync: { get: async (key) => ({ [key]: storage[key] }) },
+      session: { set: async (items) => { Object.assign(state.session, items); } },
+      onChanged: events.storage,
+    },
     permissions: { onAdded: events.permAdded },
     tabs: {
       create: ({ url }) => { state.tabs.push(url); },

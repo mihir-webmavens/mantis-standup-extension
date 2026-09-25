@@ -14,7 +14,7 @@ over the DevTools protocol (`helpers/browser.mjs`).
 | --- | --- | --- |
 | `unit/` | Reading/saving the standup site's pages, badge, EOD reminder, shortcut routing | `background.js` runs in a Node `vm` with a fake `chrome` API and a fake standup server (`helpers/background.mjs`) |
 | `ui/` | Standup/EOD panels: Esc and focus, saving, Est Time, priority, duplicate notice, EOD-only pages | `content.js` on a stand-in Mantis page (`ui/harness.html`) with a fake background |
-| `extension/` | Toolbar popup (EOD tab, style picker, reminder, shortcuts list), shortcuts opening panels | The unpacked extension in Chromium; the service worker's requests are answered by the same fake standup server |
+| `extension/` | Toolbar popup (Add Standup, EOD tab, style picker, reminder, shortcuts list), shortcuts opening panels | The unpacked extension in Chromium; the service worker's requests are answered by the same fake standup server |
 
 `fixtures/edit-standups.html` is a sanitized copy of the real EOD page
 (`/admin/standups/edit-standups`). If the standup site changes its markup,

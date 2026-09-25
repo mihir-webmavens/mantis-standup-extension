@@ -697,6 +697,11 @@
 
   // Keyboard shortcuts (see "commands" in manifest.json), relayed by background.js.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    // The toolbar popup's Add Standup form pre-fills from the open ticket.
+    if (msg?.type === 'ticketInfo') {
+      const ticket = ticketIdFromUrl();
+      return sendResponse(ticket ? { ticket, link: ticketUrl(ticket), priority: detectPriority() } : {});
+    }
     if (msg?.type !== 'shortcut' || !host) return;
     if (msg.command === 'open-standup') {
       if (!currentTicket) return sendResponse({ handled: false }); // Standup needs a ticket page

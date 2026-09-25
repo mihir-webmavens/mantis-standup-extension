@@ -26,7 +26,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true; // keep the channel open for the async response
 });
 
-async function submitStandup({ ticket, plannedAction, repoLink, priority, estTime }) {
+async function submitStandup({ ticket, plannedAction, repoLink, priority, estTime, supportNeeded, blockers }) {
   if (!ticket || !plannedAction || !repoLink || !priority) {
     throw new Error('Missing standup data; nothing was submitted.');
   }
@@ -47,6 +47,9 @@ async function submitStandup({ ticket, plannedAction, repoLink, priority, estTim
   body.set('repo_link', repoLink);
   body.set('priority', priority);
   body.set('est_time', estTime?.trim() || '-'); // the server requires a value; '-' was the old fixed one
+  // Only the toolbar popup's form sends these; otherwise the form's defaults stay.
+  if (supportNeeded?.trim()) body.set('support_needed', supportNeeded.trim());
+  if (blockers?.trim()) body.set('blockers_challenges', blockers.trim());
 
   // Redirects are not followed: the server redirects to http:// URLs, and
   // Chrome blocks the resulting https -> http -> https chain with a CORS error
@@ -426,7 +429,8 @@ wireNotifications();
 // ---------- keyboard shortcuts ----------
 // Chrome owns the key bindings (manifest "commands"): users change them at
 // chrome://extensions/shortcuts, Chrome keeps them and refuses keys already in
-// use. The Mantis tab's content script opens the matching panel.
+// use. The Mantis tab's content script opens the matching panel; elsewhere
+// the toolbar popup opens on the matching tab.
 
 const SHORTCUT_COMMANDS = ['open-standup', 'open-eod'];
 
@@ -440,8 +444,10 @@ async function handleCommand(command, tab) {
       // Not a Mantis page (no content script there).
     }
   }
-  // Off Mantis the EOD list lives in the toolbar popup.
-  if (!handled && command === 'open-eod') chrome.action.openPopup?.().catch(() => {});
+  if (handled) return;
+  // Off Mantis ticket pages both live in the toolbar popup; it reads (and clears) this once.
+  if (command === 'open-standup') await chrome.storage.session?.set({ popupTab: 'standup' }).catch(() => {});
+  chrome.action.openPopup?.().catch(() => {});
 }
 
 chrome.commands.onCommand.addListener(handleCommand);

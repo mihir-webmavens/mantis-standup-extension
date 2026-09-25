@@ -92,6 +92,38 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     await popup.close();
   });
 
+  test('Add Standup from any page: the shortcut opens the popup form, which submits', async () => {
+    // What handleCommand leaves for the popup when no Mantis ticket page handles Ctrl+Shift+S.
+    await ext.sw.eval(`chrome.storage.session.set({ popupTab: 'standup' })`);
+    const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`document.activeElement?.id === 'su-action'`, { message: 'Planned Action was not focused' });
+    assert.equal(await popup.eval(`document.querySelector('.tab[aria-selected=true]').id`), 'tab-standup');
+    assert.deepEqual(await popup.eval(`['su-ticket', 'su-link', 'su-priority', 'su-est', 'su-support', 'su-blockers'].map((id) => document.getElementById(id).value)`),
+      ['', '', 'Low', '-', 'No', 'None']);
+    assert.equal(await popup.eval(`chrome.storage.session.get('popupTab').then((v) => v.popupTab ?? null)`), null, 'the flag is used once');
+    assert.equal(await popup.eval('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
+
+    const before = server.posts.length;
+    await popup.eval(`document.getElementById('su-action').value = 'Fix the invoice export'`);
+    await popup.click(`document.getElementById('su-submit')`);
+    assert.match(await popup.eval(`document.querySelector('.su-status').textContent`), /ticket #.*repo \/ issue link/);
+    assert.equal(server.posts.length, before, 'nothing is sent without a ticket and link');
+
+    await popup.eval(`document.getElementById('su-ticket').value = '#456';
+      document.getElementById('su-link').value = 'https://github.com/acme/app/issues/456';
+      document.getElementById('su-priority').value = 'Medium';
+      document.getElementById('su-blockers').value = 'Waiting on API keys'`);
+    await popup.key('Enter', { ctrl: true });
+    await popup.until(`document.querySelector('.su-status').textContent.startsWith('✓')`, { message: 'standup was not added' });
+    assert.equal(await popup.eval(`document.querySelector('.su-status').textContent`), '✓ Standup added for #456 (Medium).');
+    const body = Object.fromEntries(server.posts.at(-1).body);
+    assert.equal(server.posts.at(-1).path, '/admin/standups');
+    assert.deepEqual([body.ticket, body.planned_action, body.repo_link, body.priority, body.est_time, body.support_needed, body.blockers_challenges],
+      ['456', 'Fix the invoice export', 'https://github.com/acme/app/issues/456', 'Medium', '-', 'No', 'Waiting on API keys']);
+    assert.equal(await popup.eval(`document.getElementById('su-action').value + '|' + document.getElementById('su-blockers').value`), '|None');
+    await popup.close();
+  });
+
   test('Settings tab: style picker saves and restyles open Mantis tabs', async () => {
     const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/123', { routes: mantisRoutes });
     await mantis.until(`document.querySelector('mantis-quick-standup')`);
@@ -143,6 +175,9 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     assert.deepEqual(await fire('open-standup'), { standup: true, eod: false, focus: 'mqs-action' });
     assert.deepEqual(await fire('open-eod'), { standup: false, eod: true, focus: 'panel panel-eod' });
     assert.equal(await mantis.eval(`document.querySelector('mantis-quick-standup').shadowRoot.querySelector('.m-priority-select').value`), 'High');
+    // What the popup's Add Standup form pre-fills from this ticket.
+    assert.deepEqual(await ext.sw.eval(`chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => chrome.tabs.sendMessage(tab.id, { type: 'ticketInfo' }))`),
+      { ticket: '123', link: 'https://projects.webmavens.dev/tickets/123', priority: 'High' });
     await mantis.close();
   });
 });

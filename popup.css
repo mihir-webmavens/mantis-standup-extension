@@ -226,3 +226,18 @@ footer { flex: none; height: 34px; display: flex; align-items: center; justify-c
 .status.error { color: var(--error); }
 
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+
+/* Add Standup (toolbar popup) */
+.standup-form { display: flex; flex-direction: column; gap: 9px; padding: 2px; }
+.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 650; color: var(--muted); min-width: 0; }
+.f input, .f select, .f textarea {
+  width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 400;
+}
+.f textarea { min-height: 64px; resize: vertical; }
+.f input:focus, .f select:focus, .f textarea:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
+.f [aria-invalid="true"] { border-color: var(--error); }
+.f-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dup-note { padding: 6px 8px; border-radius: 6px; font-size: 12px; background: var(--pending-bg); border: 1px solid var(--pending-border); color: var(--pending-text); }
+.su-status { padding: 6px 8px; border-radius: 6px; font-size: 12px; background: var(--filled-bg); color: var(--ok-text); word-break: break-word; }
+.su-status.err { background: var(--err-bg); color: var(--err-text); }

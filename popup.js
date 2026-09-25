@@ -280,6 +280,7 @@ function renderEods() {
   const hadFocus = editing && document.activeElement === editing.textarea;
   eodUi.list.replaceChildren(...items.map(eodCard));
   if (hadFocus) editing.textarea.focus();
+  document.dispatchEvent(new Event('eods-changed')); // Add Standup's duplicate notice
 }
 
 function setEodStatus(message, isError = false) {
@@ -386,3 +387,130 @@ async function saveEdit() {
 
 eodUi.refresh.addEventListener('click', loadEods);
 loadEods();
+
+// ---------- Add Standup ----------
+// Works from any tab. Submits through background.js like the Mantis panel; on a
+// Mantis ticket page the ticket, link and priority are pre-filled from the page.
+
+const su = {
+  form: document.querySelector('.standup-form'),
+  ticket: document.querySelector('#su-ticket'),
+  action: document.querySelector('#su-action'),
+  link: document.querySelector('#su-link'),
+  priority: document.querySelector('#su-priority'),
+  est: document.querySelector('#su-est'),
+  support: document.querySelector('#su-support'),
+  blockers: document.querySelector('#su-blockers'),
+  dup: document.querySelector('.dup-note'),
+  submit: document.querySelector('#su-submit'),
+  status: document.querySelector('.su-status'),
+};
+const SU_DEFAULTS = { est: '-', support: 'No', blockers: 'None' };
+const ticketKey = (t) => String(t || '').trim().replace(/^#/, '');
+
+function setSuStatus(message, isError = false) {
+  su.status.textContent = message;
+  su.status.classList.toggle('err', isError);
+  su.status.hidden = !message;
+}
+
+// Warns (without blocking) when this ticket already has a standup today.
+function renderSuDuplicate() {
+  const ticket = ticketKey(su.ticket.value);
+  const today = localDate(new Date());
+  const same = ticket && eods.status === 'ready'
+    ? eods.items.filter((e) => ticketKey(e.ticket) === ticket && (!/^\d{4}-\d{2}-\d{2}/.test(e.createdAt || '') || e.createdAt.startsWith(today)))
+    : [];
+  su.dup.hidden = !same.length;
+  if (!same.length) return;
+  const time = /\d{2}:\d{2}/.exec(same[0].createdAt)?.[0];
+  su.dup.textContent = same.length === 1
+    ? `Already added today${time ? ` at ${time}` : ''}. Adding again creates another entry.`
+    : `${same.length} standups already added today for #${ticket}. Adding again creates another entry.`;
+}
+
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function submitStandup() {
+  if (su.submit.disabled) return;
+  const payload = {
+    ticket: ticketKey(su.ticket.value),
+    plannedAction: su.action.value.trim(),
+    repoLink: su.link.value.trim(),
+    priority: su.priority.value,
+    estTime: su.est.value.trim() || '-',
+    supportNeeded: su.support.value.trim() || SU_DEFAULTS.support,
+    blockers: su.blockers.value.trim() || SU_DEFAULTS.blockers,
+  };
+  const missing = [[su.ticket, payload.ticket, 'the ticket #'], [su.action, payload.plannedAction, 'your planned action'], [su.link, payload.repoLink, 'the repo / issue link']]
+    .filter(([el, value]) => (el.setAttribute('aria-invalid', String(!value)), !value));
+  if (missing.length) {
+    missing[0][0].focus();
+    return setSuStatus(`Enter ${missing.map((m) => m[2]).join(', ')} first.`, true);
+  }
+
+  su.submit.disabled = true;
+  su.submit.textContent = 'Sending…';
+  setSuStatus('');
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'submitStandup', payload });
+    if (!res?.ok) throw new Error(res?.error || 'Unknown error; standup may not have been saved.');
+    su.action.value = '';
+    su.est.value = SU_DEFAULTS.est;
+    su.support.value = SU_DEFAULTS.support;
+    su.blockers.value = SU_DEFAULTS.blockers;
+    setSuStatus(`✓ Standup added for #${payload.ticket} (${payload.priority}).`);
+    loadEods(); // the new standup is also a new EOD entry
+  } catch (err) {
+    setSuStatus(err.message, true);
+  } finally {
+    su.submit.disabled = false;
+    su.submit.textContent = 'Add Standup';
+  }
+}
+
+su.form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  submitStandup();
+});
+su.form.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    submitStandup();
+  }
+});
+for (const el of [su.ticket, su.action, su.link]) el.addEventListener('input', () => el.removeAttribute('aria-invalid'));
+su.ticket.addEventListener('input', renderSuDuplicate);
+document.addEventListener('eods-changed', renderSuDuplicate);
+
+// Pre-fill from a Mantis ticket page (its content script answers); other sites
+// leave the fields for the user to type.
+async function prefillFromTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const info = tab?.id ? await chrome.tabs.sendMessage(tab.id, { type: 'ticketInfo' }) : null;
+    if (!info?.ticket) return;
+    if (!su.ticket.value) su.ticket.value = info.ticket;
+    if (!su.link.value) su.link.value = info.link;
+    if (info.priority) su.priority.value = info.priority;
+    renderSuDuplicate();
+  } catch {
+    // Not a Mantis page (no content script there).
+  }
+}
+
+function focusStandup() {
+  showTab(document.querySelector('#tab-standup'));
+  su.action.focus();
+}
+
+// Ctrl+Shift+S off a Mantis ticket page opens the popup on this tab (see background.js).
+document.querySelector('#tab-standup').addEventListener('click', () => (su.ticket.value ? su.action : su.ticket).focus());
+prefillFromTab();
+chrome.storage.session?.get('popupTab').then(({ popupTab }) => {
+  if (popupTab !== 'standup') return;
+  chrome.storage.session.remove('popupTab');
+  focusStandup();
+}, () => {});

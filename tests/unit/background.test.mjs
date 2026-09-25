@@ -51,6 +51,14 @@ describe('adding a standup', () => {
     });
   });
 
+  test('sends support needed and blockers only when given (Add Standup in the popup)', async () => {
+    const bg = loadBackground();
+    await bg.send('submitStandup', { ...standup, supportNeeded: ' Need access ', blockers: 'VPN down' });
+    const body = Object.fromEntries(bg.server.posts[0].body);
+    assert.equal(body.support_needed, 'Need access');
+    assert.equal(body.blockers_challenges, 'VPN down');
+  });
+
   test('sends "-" as Est Time when it is empty or missing', async () => {
     for (const estTime of ['', '   ', undefined]) {
       const bg = loadBackground();
@@ -320,18 +328,21 @@ describe('keyboard shortcuts', () => {
     assert.equal(bg.state.popupOpened, 0);
   });
 
-  test('off Mantis, the EOD shortcut opens the toolbar popup; the Standup one does nothing', async () => {
+  test('off Mantis, both shortcuts open the toolbar popup; Standup on its Add Standup tab', async () => {
     const bg = loadBackground(); // no content script answers
     await bg.events.command.fire('open-eod', { id: 9 });
     assert.equal(bg.state.popupOpened, 1);
+    assert.deepEqual(plain(bg.state.session), {});
     await bg.events.command.fire('open-standup', { id: 9 });
-    assert.equal(bg.state.popupOpened, 1);
+    assert.equal(bg.state.popupOpened, 2);
+    assert.deepEqual(plain(bg.state.session), { popupTab: 'standup' });
   });
 
-  test('on a Mantis page that is not a ticket, only EOD is handled there', async () => {
+  test('on a Mantis page that is not a ticket, EOD opens there and Standup opens the popup', async () => {
     const bg = loadBackground({ tabMessage: async (_tab, msg) => ({ handled: msg.command === 'open-eod' }) });
     await bg.events.command.fire('open-eod', { id: 2 });
-    await bg.events.command.fire('open-standup', { id: 2 });
     assert.equal(bg.state.popupOpened, 0);
+    await bg.events.command.fire('open-standup', { id: 2 });
+    assert.equal(bg.state.popupOpened, 1);
   });
 });
