@@ -25,7 +25,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true; // keep the channel open for the async response
 });
 
-async function submitStandup({ ticket, plannedAction, repoLink, priority }) {
+async function submitStandup({ ticket, plannedAction, repoLink, priority, estTime }) {
   if (!ticket || !plannedAction || !repoLink || !priority) {
     throw new Error('Missing standup data; nothing was submitted.');
   }
@@ -45,7 +45,7 @@ async function submitStandup({ ticket, plannedAction, repoLink, priority }) {
   body.set('planned_action', plannedAction);
   body.set('repo_link', repoLink);
   body.set('priority', priority);
-  body.set('est_time', '-');
+  body.set('est_time', estTime?.trim() || '-'); // the server requires a value; '-' was the old fixed one
 
   // Redirects are not followed: the server redirects to http:// URLs, and
   // Chrome blocks the resulting https -> http -> https chain with a CORS error

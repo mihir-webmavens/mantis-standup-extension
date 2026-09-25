@@ -115,7 +115,7 @@
         --high-bg: rgba(239,68,68,.16); --high-text: #fca5a5; --high-border: rgba(239,68,68,.4);
         --medium-bg: rgba(245,158,11,.16); --medium-text: #fcd34d; --medium-border: rgba(245,158,11,.4);
       }
-      textarea::placeholder { color: var(--faint); }
+      textarea::placeholder, .m-est::placeholder { color: var(--faint); }
     }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 
@@ -140,6 +140,13 @@
     .meta { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin-bottom: 10px; color: var(--text-2); }
     .meta dt { color: var(--muted); }
     .meta dd { margin: 0; word-break: break-all; }
+    .meta .dt-label { display: inline; font-weight: inherit; margin: 0; color: inherit; }
+    .meta dt:has(.dt-label) { align-self: center; }
+    .m-est {
+      width: 140px; max-width: 100%; height: 26px; padding: 2px 8px;
+      border: 1px solid var(--input-border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--card);
+    }
+    .m-est:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     label { display: block; font-weight: 600; margin-bottom: 4px; }
     textarea {
       width: 100%; min-height: 90px; resize: vertical; padding: 8px;
@@ -234,7 +241,8 @@
           <dt>Ticket</dt><dd class="m-ticket"></dd>
           <dt>Link</dt><dd class="m-link"></dd>
           <dt>Priority</dt><dd class="m-priority"></dd>
-          <dt>Est Time</dt><dd>-</dd>
+          <dt><label class="dt-label" for="mqs-est">Est Time</label></dt>
+          <dd><input id="mqs-est" class="m-est" type="text" value="-" autocomplete="off" aria-label="Est Time"></dd>
         </dl>
         <label for="mqs-action">Planned Action</label>
         <textarea id="mqs-action" placeholder="Working on the notification issue..."></textarea>
@@ -267,6 +275,7 @@
       link: root.querySelector('.m-link'),
       priority: root.querySelector('.m-priority'),
       text: root.querySelector('textarea'),
+      estTime: root.querySelector('.m-est'),
       submit: root.querySelector('.submit'),
       status: root.querySelector('.panel-standup .status'),
       eodFab: root.querySelector('.fab-eod'),
@@ -281,10 +290,12 @@
     ui.fab.addEventListener('click', () => (ui.panel.hidden ? openPanel() : closePanel()));
     ui.close.addEventListener('click', closePanel);
     ui.submit.addEventListener('click', submit);
-    closeOnEscape(ui.text, closePanel);
-    ui.text.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
-    });
+    for (const field of [ui.text, ui.estTime]) {
+      closeOnEscape(field, closePanel);
+      field.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
+      });
+    }
 
     ui.eodFab.addEventListener('click', () => (ui.eodPanel.hidden ? openEodPanel() : closeEodPanel()));
     ui.eodClose.addEventListener('click', closeEodPanel);
@@ -543,6 +554,7 @@
 
     const ticket = currentTicket;
     const plannedAction = ui.text.value.trim();
+    const estTime = ui.estTime.value.trim() || '-';
     // Re-read at submit time: Livewire may have updated the page since opening.
     const priority = refreshMeta();
 
@@ -555,10 +567,11 @@
     try {
       const res = await chrome.runtime.sendMessage({
         type: 'submitStandup',
-        payload: { ticket, plannedAction, repoLink: ticketUrl(ticket), priority },
+        payload: { ticket, plannedAction, repoLink: ticketUrl(ticket), priority, estTime },
       });
       if (res?.ok) {
         ui.text.value = '';
+        ui.estTime.value = '-';
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
         loadEods(); // the new standup is also a new EOD entry
       } else {
@@ -585,6 +598,7 @@
     if (id !== currentTicket) {
       currentTicket = id;
       ui.text.value = '';
+      ui.estTime.value = '-';
       ui.status.hidden = true;
       if (id && !ui.panel.hidden) refreshMeta();
       if (!id) {
