@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Mantis Quick Standup",
+  "version": "1.0.1",
+  "description": "Add a standup to standup.webmavens.dev directly from a Mantis ticket page.",
+  "host_permissions": ["https://standup.webmavens.dev/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://projects.webmavens.dev/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
