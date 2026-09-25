@@ -5,11 +5,19 @@
 const STANDUP_ORIGIN = 'https://standup.webmavens.dev';
 const CREATE_URL = `${STANDUP_ORIGIN}/admin/standups/create`;
 const INDEX_PATH = '/admin/standups';
+const EOD_URL = `${STANDUP_ORIGIN}/admin/standups/edit-standups`;
+const EOD_FORM_PATH = '/admin/standups/update-standups';
+
+const HANDLERS = {
+  submitStandup: (payload) => submitStandup(payload).then(() => ({})),
+  fetchEods: () => fetchEods().then((eods) => ({ eods })),
+};
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type !== 'submitStandup') return;
-  submitStandup(msg.payload).then(
-    () => sendResponse({ ok: true }),
+  const handler = HANDLERS[msg?.type];
+  if (!handler) return;
+  handler(msg.payload).then(
+    (data) => sendResponse({ ok: true, ...data }),
     (err) => sendResponse({ ok: false, error: err.message || String(err) }),
   );
   return true; // keep the channel open for the async response
@@ -59,13 +67,70 @@ async function submitStandup({ ticket, plannedAction, repoLink, priority }) {
 
 // When logged in the create form is a plain 200; any redirect means the
 // session is gone and the server is sending us to /login.
-async function fetchCreateForm() {
-  const res = await fetch(CREATE_URL, { credentials: 'include', redirect: 'manual' });
+function fetchCreateForm() {
+  return fetchStandupPage(CREATE_URL, 'the standup form');
+}
+
+async function fetchStandupPage(url, what) {
+  const res = await fetch(url, { credentials: 'include', redirect: 'manual' });
   if (res.type === 'opaqueredirect') {
     throw new Error('You are not logged into standup.webmavens.dev. Log in there, then try again.');
   }
-  if (!res.ok) throw new Error(`Could not open the standup form (HTTP ${res.status}).`);
+  if (!res.ok) throw new Error(`Could not open ${what} (HTTP ${res.status}).`);
   return res;
+}
+
+// Each EOD is a row of the update-standups form that carries an
+// evening_updates[<id>] input; columns are located by their header text.
+async function fetchEods() {
+  const html = await (await fetchStandupPage(EOD_URL, 'the EOD page')).text();
+
+  const form = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)].find(([, attrs]) => {
+    const action = attr(attrs, 'action');
+    return action && new URL(action, STANDUP_ORIGIN).pathname.replace(/\/$/, '') === EOD_FORM_PATH;
+  });
+  if (!form) throw new Error('Could not find the EOD list on standup.webmavens.dev.');
+
+  const headers = [...(/<thead\b[^>]*>([\s\S]*?)<\/thead>/i.exec(form[2])?.[1] ?? '').matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)]
+    .map(([, inner]) => cellText(inner));
+  const col = (re) => headers.findIndex((h) => re.test(h));
+  const cols = {
+    ticket: col(/ticket/i),
+    plannedAction: col(/planned/i),
+    link: col(/link/i),
+    priority: col(/priority/i),
+    estTime: col(/est/i),
+    createdAt: col(/created/i),
+  };
+
+  const tbody = /<tbody\b[^>]*>([\s\S]*?)<\/tbody>/i.exec(form[2])?.[1] ?? '';
+  const eods = [];
+  for (const [, row] of tbody.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const input = [...row.matchAll(/<input\b[^>]*>/gi)].map(([tag]) => tag)
+      .find((tag) => /^evening_updates\[\d+\]$/.test(attr(tag, 'name') || ''));
+    if (!input) continue;
+
+    const cells = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(([, inner]) => inner);
+    const text = (i) => (i >= 0 && cells[i] != null ? cellText(cells[i]) : '');
+    const anchor = cols.link >= 0 && cells[cols.link] ? /<a\b[^>]*>/i.exec(cells[cols.link]) : null;
+    const href = anchor ? attr(anchor[0], 'href') : null;
+
+    eods.push({
+      id: /\[(\d+)\]/.exec(attr(input, 'name'))[1],
+      ticket: text(cols.ticket),
+      plannedAction: text(cols.plannedAction),
+      link: href && /^https?:\/\//i.test(href) ? href : null,
+      priority: text(cols.priority),
+      estTime: text(cols.estTime),
+      createdAt: text(cols.createdAt),
+      update: attr(input, 'value') ?? '',
+    });
+  }
+  return eods;
+}
+
+function cellText(html) {
+  return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 
 // DOMParser is not available in MV3 service workers, so parse with regexes.

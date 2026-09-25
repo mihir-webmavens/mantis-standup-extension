@@ -1,5 +1,5 @@
-// Adds a small "Standup" overlay to Mantis ticket pages
-// (https://projects.webmavens.dev/tickets/{id}).
+// Adds a small "Standup" overlay, plus a read-only "EOD" list of today's
+// standups, to Mantis ticket pages (https://projects.webmavens.dev/tickets/{id}).
 
 (() => {
   const TICKET_PATH_RE = /^\/tickets\/(\d+)\/?$/;
@@ -8,6 +8,9 @@
   let host = null;
   let ui = null;
   let currentTicket = null;
+  // Single source for both the EOD button count and the EOD list.
+  let eodState = { status: 'idle', eods: [], error: null };
+  let eodRequest = 0;
 
   // ---------- ticket + priority detection ----------
 
@@ -80,13 +83,29 @@
   const CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .fab {
+    /* One button shows at a time; scroll (or use the dots) to switch. */
+    .fabs {
       position: fixed; right: 20px; bottom: 20px; z-index: 2147483646;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .fab-scroll {
+      display: grid; grid-auto-rows: 40px; height: 40px;
+      overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory;
+      scrollbar-width: none; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    }
+    .fab-scroll::-webkit-scrollbar { display: none; }
+    .fab {
+      scroll-snap-align: start; width: 100%; height: 40px;
       background: #2563eb; color: #fff; border: 0; border-radius: 999px;
-      padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
-      box-shadow: 0 4px 14px rgba(0,0,0,.2);
+      padding: 0 16px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
     }
     .fab:hover { background: #1d4ed8; }
+    .dots { display: flex; flex-direction: column; gap: 5px; }
+    .dot {
+      width: 8px; height: 8px; padding: 0; border-radius: 50%; cursor: pointer;
+      border: 1px solid #2563eb; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .dot.active { background: #2563eb; }
     .panel {
       position: fixed; right: 20px; bottom: 70px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
@@ -117,6 +136,23 @@
     .status[hidden] { display: none; }
     .status.ok { background: #dcfce7; color: #166534; }
     .status.err { background: #fee2e2; color: #991b1b; }
+    .status.info { background: #f3f4f6; color: #374151; }
+    .head-actions { display: flex; align-items: center; gap: 8px; }
+    .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: #2563eb; cursor: pointer; }
+    .refresh:disabled { color: #9ca3af; cursor: default; }
+    .eod-list { list-style: none; margin: 0; padding: 0; max-height: min(420px, calc(100vh - 190px)); overflow-y: auto; }
+    .eod-list[hidden] { display: none; }
+    .eod { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
+    .eod + .eod { margin-top: 8px; }
+    .eod-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .eod-top a, .eod-top strong { font-weight: 600; color: #2563eb; text-decoration: none; }
+    .eod-top a:hover { text-decoration: underline; }
+    .eod-sub { color: #6b7280; font-size: 11px; white-space: nowrap; }
+    .eod-action { color: #111827; word-break: break-word; }
+    .eod-update { margin-top: 4px; font-size: 12px; color: #166534; word-break: break-word; }
+    .eod-update.empty { color: #9ca3af; font-style: italic; }
+    .eod-foot { margin-top: 10px; font-size: 12px; }
+    .eod-foot a { color: #2563eb; }
   `;
 
   function buildUi() {
@@ -124,8 +160,17 @@
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `
       <style>${CSS}</style>
-      <button class="fab" type="button">+ Standup</button>
-      <div class="panel" hidden>
+      <div class="fabs">
+        <div class="dots" aria-hidden="true">
+          <button class="dot active" type="button" tabindex="-1"></button>
+          <button class="dot" type="button" tabindex="-1"></button>
+        </div>
+        <div class="fab-scroll">
+          <button class="fab fab-standup" type="button">+ Standup</button>
+          <button class="fab fab-eod" type="button">EOD</button>
+        </div>
+      </div>
+      <div class="panel panel-standup" hidden>
         <div class="head">
           <h2>Add Standup</h2>
           <button class="close" type="button" aria-label="Close">&times;</button>
@@ -144,19 +189,40 @@
         </div>
         <div class="status" hidden></div>
       </div>
+      <div class="panel panel-eod" hidden>
+        <div class="head">
+          <h2 class="eod-title">EOD</h2>
+          <div class="head-actions">
+            <button class="refresh" type="button">Refresh</button>
+            <button class="close" type="button" aria-label="Close">&times;</button>
+          </div>
+        </div>
+        <div class="status eod-status" hidden></div>
+        <ul class="eod-list" hidden></ul>
+        <div class="eod-foot"><a href="${EOD_PAGE_URL}" target="_blank" rel="noopener">Fill in EODs on standup.webmavens.dev ↗</a></div>
+      </div>
     `;
     document.documentElement.appendChild(host);
 
     ui = {
-      fab: root.querySelector('.fab'),
-      panel: root.querySelector('.panel'),
-      close: root.querySelector('.close'),
+      fab: root.querySelector('.fab-standup'),
+      panel: root.querySelector('.panel-standup'),
+      close: root.querySelector('.panel-standup .close'),
       ticket: root.querySelector('.m-ticket'),
       link: root.querySelector('.m-link'),
       priority: root.querySelector('.m-priority'),
       text: root.querySelector('textarea'),
       submit: root.querySelector('.submit'),
-      status: root.querySelector('.status'),
+      status: root.querySelector('.panel-standup .status'),
+      fabScroll: root.querySelector('.fab-scroll'),
+      dots: [...root.querySelectorAll('.dot')],
+      eodFab: root.querySelector('.fab-eod'),
+      eodPanel: root.querySelector('.panel-eod'),
+      eodClose: root.querySelector('.panel-eod .close'),
+      eodTitle: root.querySelector('.eod-title'),
+      eodRefresh: root.querySelector('.refresh'),
+      eodStatus: root.querySelector('.eod-status'),
+      eodList: root.querySelector('.eod-list'),
     };
 
     ui.fab.addEventListener('click', () => (ui.panel.hidden ? openPanel() : closePanel()));
@@ -167,6 +233,25 @@
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
       if (e.key === 'Escape') closePanel();
     });
+
+    ui.eodFab.addEventListener('click', () => (ui.eodPanel.hidden ? openEodPanel() : closeEodPanel()));
+    ui.eodClose.addEventListener('click', closeEodPanel);
+    ui.eodRefresh.addEventListener('click', loadEods);
+    ui.eodPanel.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') closeEodPanel();
+    });
+    ui.fabScroll.addEventListener('scroll', syncDots, { passive: true });
+    ui.dots.forEach((dot, i) =>
+      dot.addEventListener('click', () => ui.fabScroll.scrollTo({ top: i * ui.fabScroll.clientHeight, behavior: 'smooth' })),
+    );
+
+    loadEods();
+  }
+
+  function syncDots() {
+    const index = Math.round(ui.fabScroll.scrollTop / ui.fabScroll.clientHeight);
+    ui.dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
   }
 
   function ticketUrl(id) {
@@ -185,6 +270,7 @@
   }
 
   function openPanel() {
+    closeEodPanel();
     refreshMeta();
     ui.panel.hidden = false;
     ui.text.focus();
@@ -194,10 +280,86 @@
     ui.panel.hidden = true;
   }
 
-  function showStatus(kind, message) {
-    ui.status.className = `status ${kind}`;
-    ui.status.textContent = message;
-    ui.status.hidden = false;
+  function showStatus(kind, message, target = ui.status) {
+    target.className = `status ${kind}`;
+    target.textContent = message;
+    target.hidden = false;
+  }
+
+  function extensionError(err) {
+    return /context invalidated/i.test(err.message)
+      ? 'The extension was reloaded. Refresh this page and try again.'
+      : err.message;
+  }
+
+  // ---------- EOD ----------
+
+  const EOD_PAGE_URL = 'https://standup.webmavens.dev/admin/standups/edit-standups';
+
+  function openEodPanel() {
+    closePanel();
+    ui.eodPanel.hidden = false;
+    loadEods();
+  }
+
+  function closeEodPanel() {
+    ui.eodPanel.hidden = true;
+  }
+
+  async function loadEods() {
+    const request = ++eodRequest;
+    eodState = { ...eodState, status: 'loading', error: null };
+    renderEods();
+
+    let next;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'fetchEods' });
+      next = res?.ok
+        ? { status: 'ready', eods: res.eods, error: null }
+        : { status: 'error', eods: [], error: res?.error || 'Could not load EODs.' };
+    } catch (err) {
+      next = { status: 'error', eods: [], error: extensionError(err) };
+    }
+    if (request !== eodRequest) return; // a newer load superseded this one
+    eodState = next;
+    renderEods();
+  }
+
+  // Count and list are both drawn from eodState so they never disagree.
+  function renderEods() {
+    const { status, eods, error } = eodState;
+    const count = status === 'ready' ? `(${eods.length})` : status === 'loading' ? '(…)' : status === 'error' ? '(!)' : '';
+    ui.eodFab.textContent = `EOD ${count}`.trim();
+    ui.eodFab.title = status === 'error' ? error : '';
+    ui.eodTitle.textContent = status === 'ready' ? `EOD (${eods.length})` : 'EOD';
+    ui.eodRefresh.disabled = status === 'loading';
+
+    if (status === 'loading' && !ui.eodList.childElementCount) showStatus('info', 'Loading EODs…', ui.eodStatus);
+    else if (status === 'error') showStatus('err', error, ui.eodStatus);
+    else if (status === 'ready' && !eods.length) showStatus('info', 'No EODs available.', ui.eodStatus);
+    else if (status !== 'loading') ui.eodStatus.hidden = true;
+
+    if (status === 'loading') return; // keep the previous list visible while refreshing
+    ui.eodList.replaceChildren(...eods.map(eodItem));
+    ui.eodList.hidden = !eods.length;
+  }
+
+  function eodItem(eod) {
+    const li = el('li', 'eod');
+    const top = el('div', 'eod-top');
+    const ticket = eod.link ? el('a', '', `#${eod.ticket}`) : el('strong', '', `#${eod.ticket}`);
+    if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
+    top.append(ticket, el('span', 'eod-sub', [eod.priority, eod.createdAt].filter(Boolean).join(' · ')));
+    const update = el('div', `eod-update${eod.update ? '' : ' empty'}`, eod.update ? `EOD: ${eod.update}` : 'EOD not filled yet');
+    li.append(top, el('div', 'eod-action', eod.plannedAction), update);
+    return li;
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
   }
 
   async function submit() {
@@ -222,14 +384,12 @@
       if (res?.ok) {
         ui.text.value = '';
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
+        loadEods(); // the new standup is also a new EOD entry
       } else {
         showStatus('err', res?.error || 'Unknown error; standup may not have been saved.');
       }
     } catch (err) {
-      const msg = /context invalidated/i.test(err.message)
-        ? 'The extension was reloaded. Refresh this page and try again.'
-        : err.message;
-      showStatus('err', msg);
+      showStatus('err', extensionError(err));
     } finally {
       ui.submit.disabled = false;
       ui.submit.textContent = 'Add Standup';
@@ -251,10 +411,17 @@
       ui.text.value = '';
       ui.status.hidden = true;
       if (id && !ui.panel.hidden) refreshMeta();
-      if (!id) closePanel();
+      if (!id) {
+        closePanel();
+        closeEodPanel();
+      }
     }
   }
 
   sync();
   setInterval(sync, 1000);
+  // Pick up EODs added or filled in from another tab.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && host && currentTicket) loadEods();
+  });
 })();
