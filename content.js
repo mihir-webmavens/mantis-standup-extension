@@ -115,6 +115,7 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 14px; font-size: 13px;
     }
     .panel[hidden] { display: none; }
+    .panel:focus { outline: none; }
     .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .head h2 { margin: 0; font-size: 15px; }
     .close { background: none; border: 0; font-size: 18px; cursor: pointer; color: #6b7280; line-height: 1; }
@@ -201,7 +202,7 @@
         </div>
         <div class="status" hidden></div>
       </div>
-      <div class="panel panel-eod" hidden>
+      <div class="panel panel-eod" tabindex="-1" hidden>
         <div class="head">
           <h2 class="eod-title">EOD</h2>
           <div class="head-actions">
@@ -240,25 +241,30 @@
     ui.fab.addEventListener('click', () => (ui.panel.hidden ? openPanel() : closePanel()));
     ui.close.addEventListener('click', closePanel);
     ui.submit.addEventListener('click', submit);
+    closeOnEscape(ui.text, closePanel);
     ui.text.addEventListener('keydown', (e) => {
-      e.stopPropagation(); // keep Mantis keyboard shortcuts from firing while typing
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
-      if (e.key === 'Escape') closePanel();
     });
 
     ui.eodFab.addEventListener('click', () => (ui.eodPanel.hidden ? openEodPanel() : closeEodPanel()));
     ui.eodClose.addEventListener('click', closeEodPanel);
     ui.eodRefresh.addEventListener('click', loadEods);
-    ui.eodPanel.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Escape') closeEodPanel();
-    });
+    // On the whole panel: Esc first closes an open EOD editor, then the popup.
+    closeOnEscape(ui.eodPanel, () => (eodEdit ? cancelEodEdit() : closeEodPanel()));
     ui.fabScroll.addEventListener('scroll', syncDots, { passive: true });
     ui.dots.forEach((dot, i) =>
       dot.addEventListener('click', () => ui.fabScroll.scrollTo({ top: i * ui.fabScroll.clientHeight, behavior: 'smooth' })),
     );
 
     loadEods();
+  }
+
+  // Esc closes the popup; other keys stay away from Mantis keyboard shortcuts.
+  function closeOnEscape(target, close) {
+    target.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') close();
+    });
   }
 
   function syncDots() {
@@ -319,7 +325,12 @@
   function openEodPanel() {
     closePanel();
     ui.eodPanel.hidden = false;
+    (eodEdit?.textarea ?? ui.eodPanel).focus(); // keyboard focus inside the panel, so Esc reaches it
     loadEods();
+  }
+
+  function eodPanelHasFocus() {
+    return ui.eodPanel.contains(ui.eodPanel.getRootNode().activeElement);
   }
 
   function closeEodPanel() {
@@ -361,10 +372,12 @@
 
     // While loading, eods still holds the previous list, so it stays visible.
     if (eodEdit && status === 'ready' && !eods.some((e) => e.id === eodEdit.id)) eodEdit = null;
-    const refocus = eodEdit && ui.eodList.getRootNode().activeElement === eodEdit.textarea;
+    const focused = ui.eodList.getRootNode().activeElement;
+    const listHadFocus = ui.eodList.contains(focused);
     ui.eodList.replaceChildren(...eods.map(eodItem));
     ui.eodList.hidden = !eods.length;
-    if (refocus) eodEdit.textarea.focus();
+    // Re-rendering drops focus from the list; keep it in the panel so Esc still works.
+    if (listHadFocus) (eodEdit && focused === eodEdit.textarea ? eodEdit.textarea : ui.eodPanel).focus();
   }
 
   function eodItem(eod) {
@@ -395,7 +408,7 @@
   // loses the draft or the cursor position.
   function eodEditor() {
     const { textarea, saving, error } = eodEdit;
-    textarea.disabled = saving;
+    textarea.readOnly = saving; // not disabled: that would drop keyboard focus
     const box = el('div', 'eod-edit');
     const actions = el('div', 'actions');
     const cancel = el('button', 'link-btn', 'Cancel');
@@ -421,12 +434,10 @@
     textarea.value = eod.update;
     textarea.placeholder = 'What did you complete today?';
     textarea.addEventListener('keydown', (e) => {
-      e.stopPropagation(); // keep Mantis shortcuts and the panel's Esc handler out of it
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault(); // the server field is single-line
         saveEod();
       }
-      if (e.key === 'Escape') cancelEodEdit();
     });
     eodEdit = { id: eod.id, textarea, saving: false, error: null };
     eodSavedId = null;
@@ -439,11 +450,13 @@
     if (eodEdit?.saving) return;
     eodEdit = null;
     renderEods();
+    ui.eodPanel.focus();
   }
 
   async function saveEod() {
     const edit = eodEdit;
     if (!edit || edit.saving) return;
+    const hadFocus = eodPanelHasFocus(); // before the Save button is disabled and drops it
     edit.saving = true;
     edit.error = null;
     renderEods();
@@ -465,7 +478,7 @@
       edit.error = extensionError(err);
     }
     renderEods();
-    if (eodEdit === edit) edit.textarea.focus();
+    if (hadFocus && !ui.eodPanel.hidden) (eodEdit === edit ? edit.textarea : ui.eodPanel).focus();
   }
 
   function el(tag, className, text) {
