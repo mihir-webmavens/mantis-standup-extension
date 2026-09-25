@@ -83,36 +83,64 @@
   // ---------- UI ----------
 
   const CSS = `
-    :host { all: initial; }
-    * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    /* One button shows at a time; scroll (or use the dots) to switch. */
-    .fabs {
-      position: fixed; right: 20px; bottom: 20px; z-index: 2147483646;
-      display: flex; align-items: center; gap: 6px;
+    :host {
+      all: initial;
+      --accent: #7c3aed; --accent-2: #db2777; --accent-strong: #6d28d9;
+      --accent-soft: #f5f3ff; --accent-border: #ddd6fe; --accent-ring: rgba(124,58,237,.18);
+      --gradient: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent) 100%);
     }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+    /* One button shows at a time; scroll over it to switch (the ↕ hints at that). */
+    .fabs { position: fixed; right: 20px; bottom: 20px; z-index: 2147483646; }
     .fab-scroll {
-      display: grid; grid-auto-rows: 40px; height: 40px;
+      display: grid; grid-auto-rows: 44px; height: 44px;
       overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory;
-      scrollbar-width: none; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+      scrollbar-width: none; border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.15);
+      transition: transform .2s ease, box-shadow .2s ease;
+      animation: fab-glow 4s ease-in-out infinite;
     }
     .fab-scroll::-webkit-scrollbar { display: none; }
+    .fab-scroll:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(219,39,119,.4), inset 0 0 0 1px rgba(255,255,255,.2); }
     .fab {
-      scroll-snap-align: start; width: 100%; height: 40px;
-      background: #2563eb; color: #fff; border: 0; border-radius: 999px;
-      padding: 0 16px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      position: relative; overflow: hidden; scroll-snap-align: start; width: 100%; height: 44px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--gradient); background-size: 200% 100%; animation: fab-flow 6s linear infinite;
+      color: #fff; border: 0; border-radius: 999px;
+      padding: 0 18px; font-size: 14px; font-weight: 700; letter-spacing: .02em; cursor: pointer; white-space: nowrap;
+      transition: transform .12s ease;
     }
-    .fab:hover { background: #1d4ed8; }
-    .dots { display: flex; flex-direction: column; gap: 5px; }
-    .dot {
-      width: 8px; height: 8px; padding: 0; border-radius: 50%; cursor: pointer;
-      border: 1px solid #2563eb; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    /* Light sweep across the button on hover. */
+    .fab::before {
+      content: ""; position: absolute; top: 0; bottom: 0; left: -75%; width: 50%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,.45), transparent);
+      transform: skewX(-20deg); pointer-events: none;
     }
-    .dot.active { background: #2563eb; }
+    .fab:hover::before { animation: fab-shine .8s ease; }
+    .fab::after { content: "↕"; font-size: 12px; opacity: .75; animation: fab-nudge 2.4s ease-in-out infinite; }
+    .fab:active { transform: scale(.95); }
+    .fab:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+    @keyframes fab-flow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+    @keyframes fab-shine { to { left: 130%; } }
+    @keyframes fab-nudge { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(-2px); } 90% { transform: translateY(2px); } }
+    @keyframes fab-glow {
+      0%, 100% { box-shadow: 0 8px 24px rgba(124,58,237,.35), inset 0 0 0 1px rgba(255,255,255,.15); }
+      50% { box-shadow: 0 8px 28px rgba(219,39,119,.45), inset 0 0 0 1px rgba(255,255,255,.15); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fab, .fab::after, .fab-scroll, .fab:hover::before { animation: none; }
+      .fab-scroll, .fab { transition: none; }
+    }
     .panel {
-      position: fixed; right: 20px; bottom: 70px; z-index: 2147483647;
+      position: fixed; right: 20px; bottom: 76px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
       background: #fff; color: #111827; border: 1px solid #e5e7eb; border-radius: 10px;
       box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 14px; font-size: 13px;
+    }
+    .panel::before {
+      content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 4px;
+      border-radius: 10px 10px 0 0; background: var(--gradient); background-size: 200% 100%;
     }
     .panel[hidden] { display: none; }
     .panel:focus { outline: none; }
@@ -127,14 +155,16 @@
       width: 100%; min-height: 90px; resize: vertical; padding: 8px;
       border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: #111827; background: #fff;
     }
-    textarea:focus { outline: 2px solid #93c5fd; border-color: #2563eb; }
+    textarea:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; }
     .hint { color: #9ca3af; font-size: 11px; }
     .submit {
-      background: #2563eb; color: #fff; border: 0; border-radius: 6px;
+      background: var(--gradient); background-size: 200% 100%; color: #fff; border: 0; border-radius: 6px;
+      transition: background-position .4s ease, filter .2s ease;
       padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
     }
-    .submit:disabled { background: #93c5fd; cursor: default; }
+    .submit:hover:not(:disabled) { background-position: 100% 0; }
+    .submit:disabled { filter: grayscale(.4) opacity(.55); cursor: default; }
     .status { margin-top: 10px; padding: 8px; border-radius: 6px; font-size: 12px; }
     .status[hidden] { display: none; }
     .status.ok { background: #dcfce7; color: #166534; }
@@ -142,21 +172,46 @@
     .status a { color: inherit; font-weight: 600; }
     .status.info { background: #f3f4f6; color: #374151; }
     .head-actions { display: flex; align-items: center; gap: 8px; }
-    .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: #2563eb; cursor: pointer; }
+    .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
     .refresh:disabled { color: #9ca3af; cursor: default; }
     .eod-list { list-style: none; margin: 0; padding: 0; max-height: min(420px, calc(100vh - 190px)); overflow-y: auto; }
     .eod-list[hidden] { display: none; }
-    .eod { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; }
+    /* Card: coloured left edge shows the state (green filled, amber pending, blue editing). */
+    .eod {
+      border: 1px solid #e5e7eb; border-left: 4px solid #f59e0b; border-radius: 8px;
+      padding: 10px 12px; background: #fff;
+    }
+    .eod.filled { border-left-color: #22c55e; }
+    .eod.editing { border-left-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
     .eod + .eod { margin-top: 8px; }
-    .eod-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
-    .eod-top a, .eod-top strong { font-weight: 600; color: #2563eb; text-decoration: none; }
+    .eod-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .eod-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .eod-top a, .eod-top strong { font-weight: 700; font-size: 13px; color: var(--accent); text-decoration: none; }
     .eod-top a:hover { text-decoration: underline; }
-    .eod-sub { color: #6b7280; font-size: 11px; white-space: nowrap; }
-    .eod-action { color: #111827; word-break: break-word; }
-    .eod-update { margin-top: 4px; font-size: 12px; color: #166534; word-break: break-word; }
-    .eod-update.empty { color: #9ca3af; font-style: italic; }
-    .eod-update-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-    .link-btn { background: none; border: 0; padding: 0; font-size: 12px; color: #2563eb; cursor: pointer; white-space: nowrap; margin-top: 4px; }
+    .eod-sub { color: #9ca3af; font-size: 11px; white-space: nowrap; }
+    .badge {
+      display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid transparent;
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 16px;
+      background: #f3f4f6; color: #4b5563; border-color: #e5e7eb;
+    }
+    .badge.high { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+    .badge.medium { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+    .eod-action { color: #374151; line-height: 1.45; word-break: break-word; }
+    .eod-update-row {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: #f0fdf4; border: 1px solid #dcfce7;
+    }
+    .eod.pending .eod-update-row { background: #fffbeb; border: 1px dashed #fcd34d; }
+    .eod-update { font-size: 12px; line-height: 1.4; color: #166534; word-break: break-word; }
+    .eod-update::before { content: "✓ "; font-weight: 700; }
+    .eod-update.empty { color: #92400e; font-style: italic; }
+    .eod-update.empty::before { content: "● "; font-style: normal; font-size: 9px; vertical-align: 1px; }
+    .eod-update-row .link-btn {
+      margin-top: 0; padding: 2px 10px; border: 1px solid var(--accent-border); border-radius: 999px;
+      background: #fff; font-weight: 600; font-size: 11px;
+    }
+    .eod-update-row .link-btn:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+    .link-btn { background: none; border: 0; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; white-space: nowrap; margin-top: 4px; }
     .link-btn:disabled { color: #9ca3af; cursor: default; }
     .eod-saved { margin-top: 4px; font-size: 11px; color: #166534; }
     .eod-edit { margin-top: 6px; }
@@ -165,7 +220,7 @@
     .eod-edit .submit { padding: 5px 10px; font-size: 12px; }
     .eod-edit .status { margin-top: 6px; }
     .eod-foot { margin-top: 10px; font-size: 12px; }
-    .eod-foot a { color: #2563eb; }
+    .eod-foot a { color: var(--accent); }
   `;
 
   function buildUi() {
@@ -174,10 +229,6 @@
     root.innerHTML = `
       <style>${CSS}</style>
       <div class="fabs">
-        <div class="dots" aria-hidden="true">
-          <button class="dot active" type="button" tabindex="-1"></button>
-          <button class="dot" type="button" tabindex="-1"></button>
-        </div>
         <div class="fab-scroll">
           <button class="fab fab-standup" type="button">+ Standup</button>
           <button class="fab fab-eod" type="button">EOD</button>
@@ -227,8 +278,6 @@
       text: root.querySelector('textarea'),
       submit: root.querySelector('.submit'),
       status: root.querySelector('.panel-standup .status'),
-      fabScroll: root.querySelector('.fab-scroll'),
-      dots: [...root.querySelectorAll('.dot')],
       eodFab: root.querySelector('.fab-eod'),
       eodPanel: root.querySelector('.panel-eod'),
       eodClose: root.querySelector('.panel-eod .close'),
@@ -251,10 +300,6 @@
     ui.eodRefresh.addEventListener('click', loadEods);
     // On the whole panel: Esc first closes an open EOD editor, then the popup.
     closeOnEscape(ui.eodPanel, () => (eodEdit ? cancelEodEdit() : closeEodPanel()));
-    ui.fabScroll.addEventListener('scroll', syncDots, { passive: true });
-    ui.dots.forEach((dot, i) =>
-      dot.addEventListener('click', () => ui.fabScroll.scrollTo({ top: i * ui.fabScroll.clientHeight, behavior: 'smooth' })),
-    );
 
     loadEods();
   }
@@ -265,11 +310,6 @@
       e.stopPropagation();
       if (e.key === 'Escape') close();
     });
-  }
-
-  function syncDots() {
-    const index = Math.round(ui.fabScroll.scrollTop / ui.fabScroll.clientHeight);
-    ui.dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
   }
 
   function ticketUrl(id) {
@@ -381,19 +421,23 @@
   }
 
   function eodItem(eod) {
-    const li = el('li', 'eod');
+    const editing = eodEdit?.id === eod.id;
+    const li = el('li', `eod ${editing ? 'editing' : eod.update ? 'filled' : 'pending'}`);
     const top = el('div', 'eod-top');
+    const id = el('div', 'eod-id');
     const ticket = eod.link ? el('a', '', `#${eod.ticket}`) : el('strong', '', `#${eod.ticket}`);
     if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
-    top.append(ticket, el('span', 'eod-sub', [eod.priority, eod.createdAt].filter(Boolean).join(' · ')));
+    id.append(ticket);
+    if (eod.priority) id.append(el('span', `badge ${eod.priority.toLowerCase()}`, eod.priority));
+    top.append(id, el('span', 'eod-sub', eod.createdAt));
     li.append(top, el('div', 'eod-action', eod.plannedAction));
 
-    if (eodEdit?.id === eod.id) {
+    if (editing) {
       li.append(eodEditor());
       return li;
     }
     const row = el('div', 'eod-update-row');
-    const update = el('div', `eod-update${eod.update ? '' : ' empty'}`, eod.update ? `EOD: ${eod.update}` : 'EOD not filled yet');
+    const update = el('div', `eod-update${eod.update ? '' : ' empty'}`, eod.update || 'EOD not filled yet');
     const edit = el('button', 'link-btn', eod.update ? 'Edit' : 'Add EOD');
     edit.type = 'button';
     edit.disabled = Boolean(eodEdit?.saving);
