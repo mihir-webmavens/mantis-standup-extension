@@ -85,9 +85,37 @@
   const CSS = `
     :host {
       all: initial;
+      color-scheme: light;
       --accent: #7c3aed; --accent-2: #db2777; --accent-strong: #6d28d9;
-      --accent-soft: #f5f3ff; --accent-border: #ddd6fe; --accent-ring: rgba(124,58,237,.18);
       --gradient: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent) 100%);
+      --link: #7c3aed; --accent-soft: #f5f3ff; --accent-border: #ddd6fe; --accent-ring: rgba(124,58,237,.18);
+
+      --surface: #fff; --card: #fff; --text: #111827; --text-2: #374151; --muted: #6b7280; --faint: #9ca3af;
+      --border: #e5e7eb; --input-border: #d1d5db; --panel-shadow: 0 10px 30px rgba(0,0,0,.18);
+      --ok-bg: #dcfce7; --ok-text: #166534; --err-bg: #fee2e2; --err-text: #991b1b; --info-bg: #f3f4f6; --info-text: #374151;
+      --filled-bg: #f0fdf4; --filled-border: #dcfce7; --filled-text: #166534;
+      --pending-bg: #fffbeb; --pending-border: #fcd34d; --pending-text: #92400e;
+      --low-bg: #f3f4f6; --low-text: #4b5563; --low-border: #e5e7eb;
+      --high-bg: #fee2e2; --high-text: #b91c1c; --high-border: #fecaca;
+      --medium-bg: #fef3c7; --medium-text: #b45309; --medium-border: #fde68a;
+    }
+    /* Dark mode follows the browser / OS setting. */
+    @media (prefers-color-scheme: dark) {
+      :host {
+        color-scheme: dark;
+        --link: #c4b5fd; --accent-soft: rgba(167,139,250,.14); --accent-border: rgba(167,139,250,.4); --accent-ring: rgba(167,139,250,.28);
+
+        --surface: #16141f; --card: #1e1b29; --text: #f4f4f5; --text-2: #d4d4d8; --muted: #a1a1aa; --faint: #71717a;
+        --border: #2e2a3d; --input-border: #3f3a52; --panel-shadow: 0 14px 40px rgba(0,0,0,.6), 0 0 0 1px rgba(167,139,250,.08);
+        --ok-bg: rgba(34,197,94,.14); --ok-text: #86efac; --err-bg: rgba(239,68,68,.16); --err-text: #fca5a5;
+        --info-bg: rgba(255,255,255,.06); --info-text: #d4d4d8;
+        --filled-bg: rgba(34,197,94,.08); --filled-border: rgba(34,197,94,.28); --filled-text: #86efac;
+        --pending-bg: rgba(245,158,11,.08); --pending-border: rgba(245,158,11,.45); --pending-text: #fcd34d;
+        --low-bg: rgba(255,255,255,.06); --low-text: #d4d4d8; --low-border: rgba(255,255,255,.14);
+        --high-bg: rgba(239,68,68,.16); --high-text: #fca5a5; --high-border: rgba(239,68,68,.4);
+        --medium-bg: rgba(245,158,11,.16); --medium-text: #fcd34d; --medium-border: rgba(245,158,11,.4);
+      }
+      textarea::placeholder { color: var(--faint); }
     }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 
@@ -135,8 +163,8 @@
     .panel {
       position: fixed; right: 20px; bottom: 76px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
-      background: #fff; color: #111827; border: 1px solid #e5e7eb; border-radius: 10px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 14px; font-size: 13px;
+      background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: var(--panel-shadow); padding: 14px; font-size: 13px;
     }
     .panel::before {
       content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 4px;
@@ -145,19 +173,19 @@
     .panel[hidden] { display: none; }
     .panel:focus { outline: none; }
     .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .head h2 { margin: 0; font-size: 15px; }
-    .close { background: none; border: 0; font-size: 18px; cursor: pointer; color: #6b7280; line-height: 1; }
-    .meta { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin-bottom: 10px; color: #374151; }
-    .meta dt { color: #6b7280; }
+    .head h2 { margin: 0; font-size: 15px; color: var(--text); }
+    .close { background: none; border: 0; font-size: 18px; cursor: pointer; color: var(--muted); line-height: 1; }
+    .meta { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin-bottom: 10px; color: var(--text-2); }
+    .meta dt { color: var(--muted); }
     .meta dd { margin: 0; word-break: break-all; }
     label { display: block; font-weight: 600; margin-bottom: 4px; }
     textarea {
       width: 100%; min-height: 90px; resize: vertical; padding: 8px;
-      border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: #111827; background: #fff;
+      border: 1px solid var(--input-border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--card);
     }
     textarea:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; }
-    .hint { color: #9ca3af; font-size: 11px; }
+    .hint { color: var(--faint); font-size: 11px; }
     .submit {
       background: var(--gradient); background-size: 200% 100%; color: #fff; border: 0; border-radius: 6px;
       transition: background-position .4s ease, filter .2s ease;
@@ -167,60 +195,60 @@
     .submit:disabled { filter: grayscale(.4) opacity(.55); cursor: default; }
     .status { margin-top: 10px; padding: 8px; border-radius: 6px; font-size: 12px; }
     .status[hidden] { display: none; }
-    .status.ok { background: #dcfce7; color: #166534; }
-    .status.err { background: #fee2e2; color: #991b1b; }
+    .status.ok { background: var(--ok-bg); color: var(--ok-text); }
+    .status.err { background: var(--err-bg); color: var(--err-text); }
     .status a { color: inherit; font-weight: 600; }
-    .status.info { background: #f3f4f6; color: #374151; }
+    .status.info { background: var(--info-bg); color: var(--info-text); }
     .head-actions { display: flex; align-items: center; gap: 8px; }
-    .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
-    .refresh:disabled { color: #9ca3af; cursor: default; }
+    .refresh { background: none; border: 0; padding: 0; font-size: 12px; color: var(--link); cursor: pointer; }
+    .refresh:disabled { color: var(--faint); cursor: default; }
     .eod-list { list-style: none; margin: 0; padding: 0; max-height: min(420px, calc(100vh - 190px)); overflow-y: auto; }
     .eod-list[hidden] { display: none; }
     /* Card: coloured left edge shows the state (green filled, amber pending, blue editing). */
     .eod {
-      border: 1px solid #e5e7eb; border-left: 4px solid #f59e0b; border-radius: 8px;
-      padding: 10px 12px; background: #fff;
+      border: 1px solid var(--border); border-left: 4px solid #f59e0b; border-radius: 8px;
+      padding: 10px 12px; background: var(--card);
     }
     .eod.filled { border-left-color: #22c55e; }
     .eod.editing { border-left-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
     .eod + .eod { margin-top: 8px; }
     .eod-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
     .eod-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .eod-top a, .eod-top strong { font-weight: 700; font-size: 13px; color: var(--accent); text-decoration: none; }
+    .eod-top a, .eod-top strong { font-weight: 700; font-size: 13px; color: var(--link); text-decoration: none; }
     .eod-top a:hover { text-decoration: underline; }
-    .eod-sub { color: #9ca3af; font-size: 11px; white-space: nowrap; }
+    .eod-sub { color: var(--faint); font-size: 11px; white-space: nowrap; }
     .badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid transparent;
       font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 16px;
-      background: #f3f4f6; color: #4b5563; border-color: #e5e7eb;
+      background: var(--low-bg); color: var(--low-text); border-color: var(--low-border);
     }
-    .badge.high { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
-    .badge.medium { background: #fef3c7; color: #b45309; border-color: #fde68a; }
-    .eod-action { color: #374151; line-height: 1.45; word-break: break-word; }
+    .badge.high { background: var(--high-bg); color: var(--high-text); border-color: var(--high-border); }
+    .badge.medium { background: var(--medium-bg); color: var(--medium-text); border-color: var(--medium-border); }
+    .eod-action { color: var(--text-2); line-height: 1.45; word-break: break-word; }
     .eod-update-row {
       display: flex; justify-content: space-between; align-items: center; gap: 8px;
-      margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: #f0fdf4; border: 1px solid #dcfce7;
+      margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--filled-bg); border: 1px solid var(--filled-border);
     }
-    .eod.pending .eod-update-row { background: #fffbeb; border: 1px dashed #fcd34d; }
-    .eod-update { font-size: 12px; line-height: 1.4; color: #166534; word-break: break-word; }
+    .eod.pending .eod-update-row { background: var(--pending-bg); border: 1px dashed var(--pending-border); }
+    .eod-update { font-size: 12px; line-height: 1.4; color: var(--filled-text); word-break: break-word; }
     .eod-update::before { content: "✓ "; font-weight: 700; }
-    .eod-update.empty { color: #92400e; font-style: italic; }
+    .eod-update.empty { color: var(--pending-text); font-style: italic; }
     .eod-update.empty::before { content: "● "; font-style: normal; font-size: 9px; vertical-align: 1px; }
     .eod-update-row .link-btn {
       margin-top: 0; padding: 2px 10px; border: 1px solid var(--accent-border); border-radius: 999px;
-      background: #fff; font-weight: 600; font-size: 11px;
+      background: var(--card); font-weight: 600; font-size: 11px;
     }
     .eod-update-row .link-btn:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
-    .link-btn { background: none; border: 0; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; white-space: nowrap; margin-top: 4px; }
-    .link-btn:disabled { color: #9ca3af; cursor: default; }
-    .eod-saved { margin-top: 4px; font-size: 11px; color: #166534; }
+    .link-btn { background: none; border: 0; padding: 0; font-size: 12px; color: var(--link); cursor: pointer; white-space: nowrap; margin-top: 4px; }
+    .link-btn:disabled { color: var(--faint); cursor: default; }
+    .eod-saved { margin-top: 4px; font-size: 11px; color: var(--ok-text); }
     .eod-edit { margin-top: 6px; }
     .eod-edit textarea { min-height: 60px; }
     .eod-edit .actions { margin-top: 6px; }
     .eod-edit .submit { padding: 5px 10px; font-size: 12px; }
     .eod-edit .status { margin-top: 6px; }
     .eod-foot { margin-top: 10px; font-size: 12px; }
-    .eod-foot a { color: var(--accent); }
+    .eod-foot a { color: var(--link); }
   `;
 
   function buildUi() {
