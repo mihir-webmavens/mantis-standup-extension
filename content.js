@@ -1,5 +1,5 @@
-// Adds a small "Standup" overlay, plus an "EOD" list of today's standups
-// whose EOD updates can be edited, to Mantis ticket pages (https://projects.webmavens.dev/tickets/{id}).
+// Adds a small "Standup" overlay to Mantis ticket pages, plus an "EOD" list of
+// today's standups (editable EOD updates) to every Mantis page (https://projects.webmavens.dev/tickets/{id}).
 
 (() => {
   const TICKET_PATH_RE = /^\/tickets\/(\d+)\/?$/;
@@ -122,6 +122,9 @@
     /* One button shows at a time; scroll over it to switch (the ↕ hints at that).
        Its look comes from button-styles.js, chosen in the toolbar popup. */
     .fabs { position: fixed; right: 20px; bottom: 20px; z-index: 2147483646; }
+    /* Off ticket pages only the EOD button is shown, so there is nothing to scroll to. */
+    .fabs.eod-only .fab-standup { display: none; }
+    .fabs.eod-only .fab::after { display: none; }
     .panel {
       position: fixed; right: 20px; bottom: 76px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
@@ -152,6 +155,19 @@
     }
     .dup-note[hidden] { display: none; }
     .dup-note strong { font-weight: 700; }
+    .m-priority-select {
+      height: 26px; padding: 2px 6px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 13px; color: var(--text); background: var(--card); cursor: pointer;
+    }
+    .m-priority-select:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
+    .m-priority-note { margin-left: 6px; color: var(--muted); font-size: 11px; }
+    .eod-heading { display: flex; align-items: center; gap: 8px; }
+    .eod-progress {
+      padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 18px;
+      background: var(--pending-bg); color: var(--pending-text); border: 1px solid var(--pending-border);
+    }
+    .eod-progress.done { background: var(--filled-bg); color: var(--filled-text); border-color: var(--filled-border); }
+    .eod-progress[hidden] { display: none; }
     .m-est:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     label { display: block; font-weight: 600; margin-bottom: 4px; }
     textarea {
@@ -232,7 +248,7 @@
     root.innerHTML = `
       <style>${CSS}</style>
       <style class="fab-style">${ButtonStyles.css(ButtonStyles.DEFAULT)}</style>
-      <div class="fabs">
+      <div class="fabs eod-only">
         <div class="fab-scroll">
           <button class="fab fab-standup" type="button">+ Standup</button>
           <button class="fab fab-eod" type="button">EOD</button>
@@ -246,7 +262,12 @@
         <dl class="meta">
           <dt>Ticket</dt><dd class="m-ticket"></dd>
           <dt>Link</dt><dd class="m-link"></dd>
-          <dt>Priority</dt><dd class="m-priority"></dd>
+          <dt><label class="dt-label" for="mqs-priority">Priority</label></dt>
+          <dd class="m-priority">
+            <select id="mqs-priority" class="m-priority-select">
+              <option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option>
+            </select><span class="m-priority-note"></span>
+          </dd>
           <dt><label class="dt-label" for="mqs-est">Est Time</label></dt>
           <dd><input id="mqs-est" class="m-est" type="text" value="-" autocomplete="off" aria-label="Est Time"></dd>
         </dl>
@@ -261,7 +282,10 @@
       </div>
       <div class="panel panel-eod" tabindex="-1" hidden>
         <div class="head">
-          <h2 class="eod-title">EOD</h2>
+          <div class="eod-heading">
+            <h2 class="eod-title">EOD</h2>
+            <span class="eod-progress" hidden></span>
+          </div>
           <div class="head-actions">
             <button class="refresh" type="button">Refresh</button>
             <button class="close" type="button" aria-label="Close">&times;</button>
@@ -275,12 +299,14 @@
     document.documentElement.appendChild(host);
 
     ui = {
+      fabs: root.querySelector('.fabs'),
       fab: root.querySelector('.fab-standup'),
       panel: root.querySelector('.panel-standup'),
       close: root.querySelector('.panel-standup .close'),
       ticket: root.querySelector('.m-ticket'),
       link: root.querySelector('.m-link'),
-      priority: root.querySelector('.m-priority'),
+      prioritySelect: root.querySelector('.m-priority-select'),
+      priorityNote: root.querySelector('.m-priority-note'),
       text: root.querySelector('textarea'),
       estTime: root.querySelector('.m-est'),
       dupNote: root.querySelector('.dup-note'),
@@ -290,6 +316,7 @@
       eodPanel: root.querySelector('.panel-eod'),
       eodClose: root.querySelector('.panel-eod .close'),
       eodTitle: root.querySelector('.eod-title'),
+      eodProgress: root.querySelector('.eod-progress'),
       eodRefresh: root.querySelector('.refresh'),
       eodStatus: root.querySelector('.eod-status'),
       eodList: root.querySelector('.eod-list'),
@@ -298,7 +325,11 @@
     ui.fab.addEventListener('click', () => (ui.panel.hidden ? openPanel() : closePanel()));
     ui.close.addEventListener('click', closePanel);
     ui.submit.addEventListener('click', submit);
-    for (const field of [ui.text, ui.estTime]) {
+    ui.prioritySelect.addEventListener('change', () => {
+      priorityTouched = true; // the user's choice now wins over what the page shows
+      ui.priorityNote.textContent = '';
+    });
+    for (const field of [ui.text, ui.estTime, ui.prioritySelect]) {
       closeOnEscape(field, closePanel);
       field.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
@@ -343,13 +374,18 @@
 
   // Tickets without a priority in Mantis are submitted as Low.
   const DEFAULT_PRIORITY = 'Low';
+  let priorityTouched = false; // set once the user picks a priority in the dropdown
 
+  // The dropdown follows the ticket's priority until the user changes it.
   function refreshMeta() {
     const detected = detectPriority();
     ui.ticket.textContent = `#${currentTicket}`;
     ui.link.textContent = ticketUrl(currentTicket);
-    ui.priority.textContent = detected || `${DEFAULT_PRIORITY} (default — not set on ticket)`;
-    return detected || DEFAULT_PRIORITY;
+    if (!priorityTouched) {
+      ui.prioritySelect.value = detected || DEFAULT_PRIORITY;
+      ui.priorityNote.textContent = detected ? '' : '(default — not set on ticket)';
+    }
+    return ui.prioritySelect.value;
   }
 
   function openPanel() {
@@ -429,6 +465,12 @@
     ui.eodFab.textContent = `EOD ${count}`.trim();
     ui.eodFab.title = status === 'error' ? error : '';
     ui.eodTitle.textContent = status === 'ready' ? `EOD (${eods.length})` : 'EOD';
+    if (status !== 'loading') {
+      const pending = eods.filter((e) => !e.update.trim()).length;
+      ui.eodProgress.hidden = status !== 'ready' || !eods.length;
+      ui.eodProgress.classList.toggle('done', !pending);
+      ui.eodProgress.textContent = pending ? `${pending} pending` : 'All done ✓';
+    }
     ui.eodRefresh.disabled = status === 'loading';
 
     if (status === 'loading' && !ui.eodList.childElementCount) showStatus('info', 'Loading EODs…', ui.eodStatus);
@@ -616,6 +658,8 @@
       if (res?.ok) {
         ui.text.value = '';
         ui.estTime.value = '-';
+        priorityTouched = false;
+        refreshMeta(); // back to the ticket's own priority for the next standup
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
         loadEods(); // the new standup is also a new EOD entry
       } else {
@@ -633,32 +677,33 @@
   // Mantis uses Livewire, which can change pages without a full reload,
   // so watch the URL instead of relying on the content script re-running.
 
+  // EOD is available on every Mantis page; Standup only on ticket pages.
   function sync() {
     const id = ticketIdFromUrl();
-    if (id && !host) buildUi();
-    if (!host) return;
+    if (!host) buildUi();
 
-    host.style.display = id ? '' : 'none';
+    ui.fabs.classList.toggle('eod-only', !id);
     if (id !== currentTicket) {
       currentTicket = id;
       ui.text.value = '';
       ui.estTime.value = '-';
+      priorityTouched = false;
       ui.status.hidden = true;
       renderDuplicateNotice();
       if (id && !ui.panel.hidden) refreshMeta();
-      if (!id) {
-        closePanel();
-        closeEodPanel();
-      }
+      if (!id) closePanel();
     }
   }
 
   // Keyboard shortcuts (see "commands" in manifest.json), relayed by background.js.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.type !== 'shortcut') return;
-    if (!host || !currentTicket) return sendResponse({ handled: false }); // not a ticket page
-    if (msg.command === 'open-standup') openPanel();
-    else if (msg.command === 'open-eod') openEodPanel();
+    if (msg?.type !== 'shortcut' || !host) return;
+    if (msg.command === 'open-standup') {
+      if (!currentTicket) return sendResponse({ handled: false }); // Standup needs a ticket page
+      openPanel();
+    } else if (msg.command === 'open-eod') {
+      openEodPanel();
+    }
     sendResponse({ handled: true });
   });
 
@@ -666,6 +711,6 @@
   setInterval(sync, 1000);
   // Pick up EODs added or filled in from another tab.
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && host && currentTicket) loadEods();
+    if (!document.hidden && host) loadEods();
   });
 })();

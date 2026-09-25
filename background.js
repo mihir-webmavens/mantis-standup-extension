@@ -373,12 +373,17 @@ wireNotifications();
 const SHORTCUT_COMMANDS = ['open-standup', 'open-eod'];
 
 async function handleCommand(command, tab) {
-  if (!SHORTCUT_COMMANDS.includes(command) || !tab?.id) return;
-  try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'shortcut', command });
-  } catch {
-    // Not a Mantis page (no content script there): nothing to open.
+  if (!SHORTCUT_COMMANDS.includes(command)) return;
+  let handled = false;
+  if (tab?.id) {
+    try {
+      handled = (await chrome.tabs.sendMessage(tab.id, { type: 'shortcut', command }))?.handled;
+    } catch {
+      // Not a Mantis page (no content script there).
+    }
   }
+  // Off Mantis the EOD list lives in the toolbar popup.
+  if (!handled && command === 'open-eod') chrome.action.openPopup?.().catch(() => {});
 }
 
 chrome.commands.onCommand.addListener(handleCommand);

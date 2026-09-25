@@ -114,8 +114,9 @@
       <code>standup.webmavens.dev</code> for that ticket, using the login you already have on that site.
     </p>
     <p>
-      It also adds an “EOD” button that lists today’s standups from the standup site’s EOD page, with a count.
-      You can edit the EOD update for any of them and click <strong>Save</strong> to update it on
+      It also adds an “EOD” button, on every <code>projects.webmavens.dev</code> page, that lists today’s standups
+      from the standup site’s EOD page, with a count. The same list is in the extension’s toolbar popup, so it works
+      from any tab. You can edit the EOD update for any of them and click <strong>Save</strong> to update it on
       <code>standup.webmavens.dev</code>.
     </p>
     <p>
@@ -134,7 +135,7 @@
         </thead>
         <tbody>
           <tr><td>Ticket number and link</td><td>The URL of the ticket page you are on</td><td><code>standup.webmavens.dev</code></td></tr>
-          <tr><td>Ticket priority</td><td>Read from the ticket page (Low if none is set)</td><td><code>standup.webmavens.dev</code></td></tr>
+          <tr><td>Ticket priority</td><td>Read from the ticket page (Low if none is set); you can change it before sending</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Planned action</td><td>The text you type into the extension</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Est time</td><td>The text you type into the extension (“-” if left empty)</td><td><code>standup.webmavens.dev</code></td></tr>
           <tr><td>Form token and user ID</td><td>The standup site’s own “create standup” form</td><td>Sent back to <code>standup.webmavens.dev</code> with the standup</td></tr>
@@ -174,7 +175,7 @@
   <section>
     <h2>Permissions</h2>
     <ul>
-      <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the Standup and EOD buttons on ticket pages and reads the ticket number and priority.</li>
+      <li><strong>Access to <code>projects.webmavens.dev</code>:</strong> shows the EOD button on its pages and the Standup button on ticket pages, and reads the ticket number and priority.</li>
       <li><strong>Access to <code>standup.webmavens.dev</code>:</strong> submits standups, reads your EOD entries and saves EOD updates to your account on the standup site.</li>
       <li><strong>Storage:</strong> remembers the button style and EOD reminder settings you choose from the extension’s toolbar icon.</li>
       <li><strong>Alarms:</strong> refreshes the pending-EOD count on the toolbar icon and schedules the EOD reminder.</li>
