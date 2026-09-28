@@ -6,7 +6,9 @@
 // Mantis MCP connection; each lookup shows as a step, and any change waits for
 // the user's Approve / Deny on a card in the reply. Conversations are kept per
 // ticket in chrome.storage.local.
-// content.js calls MantisAI.init() and closes this panel when it opens its own.
+// Runs at document_start (see manifest) so the header button is in place before
+// the page is first drawn; content.js later calls MantisAI.init() and closes this
+// panel when it opens its own.
 
 const MantisAI = (() => {
   const STORE_KEY = 'mantisAiChats';
@@ -877,7 +879,9 @@ const MantisAI = (() => {
       return r.width >= innerWidth * 0.5 && r.height >= 28 && r.height <= 140 && r.top > -10 && r.top < 90;
     });
     const bar = bars[0];
-    if (!bar) return null;
+    // While the page is still loading, wait until the header is complete, or items
+    // parsed after our button would end up to its right.
+    if (!bar || (!bar.nextElementSibling && document.readyState === 'loading')) return null;
     const barWidth = bar.getBoundingClientRect().width;
     const rows = [bar, ...bar.querySelectorAll('div, ul, nav')].filter((node) => {
       const cs = getComputedStyle(node);
@@ -906,6 +910,23 @@ const MantisAI = (() => {
     launcherButton.setAttribute('aria-expanded', String(isOpen()));
     slot.parent.insertBefore(launcher, slot.before);
     return true;
+  }
+
+  // Places the button as early as possible so the header never jumps: every frame
+  // while the page loads (before it is drawn), and straight after any DOM change,
+  // such as Livewire redrawing the header.
+  function watchHeader() {
+    const check = () => {
+      if (launcher?.isConnected) return;
+      const placed = placeLauncher();
+      if (ui) ui.edgeTab.hidden = placed;
+    };
+    new MutationObserver(check).observe(document.documentElement, { childList: true, subtree: true });
+    const frame = () => {
+      check();
+      if (document.readyState !== 'complete') requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
   }
 
   // ---------- page tracking ----------
@@ -1107,6 +1128,8 @@ const MantisAI = (() => {
     plain(text.slice(last));
     return parent;
   }
+
+  watchHeader();
 
   return { init, open, close, toggle, isOpen, renderMarkdown };
 })();

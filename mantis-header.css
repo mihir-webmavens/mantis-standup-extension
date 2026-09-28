@@ -1,0 +1,10 @@
+/* Mantis header items the team doesn't use: Unassigned, Todos, the GitHub menu
+   and the project switcher. Hidden only in this browser; Mantis is unchanged.
+   Chrome applies this file (manifest "css") before the page is first drawn, so
+   the items never flash, and it survives Livewire replacing <head>. */
+header [data-flux-navbar] a[href*="/tickets?unassigned=1"],
+header [data-flux-navbar] a[href$="/todos"],
+header [data-flux-navbar] ui-dropdown:has(a[href*="/github/"]),
+header ui-dropdown:has(button[aria-label="Switch project"]) {
+  display: none !important;
+}

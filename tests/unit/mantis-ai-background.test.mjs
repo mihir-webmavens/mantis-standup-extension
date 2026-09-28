@@ -127,7 +127,7 @@ describe('MantisAI approvals', () => {
     assert.match(system, /webmavens-projects tools/);
     assert.match(system, /shown to the user for approval first/);
     assert.match(system, /use whoami for their Mantis identity/);
-    assert.match(system, /"Active tickets" .* means tickets whose status is new, assigned or in_progress, excluding any ticket labelled or marked "Completed - Needs Testing"/);
+    assert.match(system, /"Active ticket" \/ "Active tickets" .* means tickets whose status is new, assigned or in_progress and that do not have the label "Completed - Needs Testing" or "\[Testing done\]"/);
   });
 });
 

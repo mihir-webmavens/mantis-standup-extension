@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -159,6 +159,31 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     const rows = await popup.eval(`[...document.querySelectorAll('.keys li')].map((li) => [li.querySelector('.what').textContent, [...li.querySelectorAll('kbd')].map((k) => k.textContent).join('+')])`);
     assert.deepEqual(rows, [['Add Standup (Planned Action)', 'Ctrl+Shift+S'], ['EOD list', 'Ctrl+Shift+E']]);
     await popup.close();
+  });
+
+  test('no flicker: header items are hidden and MantisAI is in the header before the first frame is drawn', async () => {
+    // A Mantis-like page (Flux header markup) that records what the first frame would show.
+    const page = `<!doctype html><html><head><meta charset="utf-8">
+      <style>header { display: flex; align-items: center; height: 56px; } nav, .right { display: flex; gap: 8px; }</style></head>
+      <body style="margin:0"><div class="layout">
+      <header data-flux-header><a href="/dashboard">Mantis</a>
+        <nav data-flux-navbar><a href="https://projects.webmavens.dev/tickets">Tickets</a><a href="https://projects.webmavens.dev/my-work">My Work</a>
+          <a href="https://projects.webmavens.dev/tickets?unassigned=1">Unassigned</a><a href="https://projects.webmavens.dev/todos">Todos</a>
+          <ui-dropdown><button type="button">GitHub</button><ui-menu><a href="https://projects.webmavens.dev/github/activity">Activity</a></ui-menu></ui-dropdown></nav>
+        <div style="flex:1"></div>
+        <div class="right"><ui-dropdown><button type="button" aria-label="Switch project">All projects</button></ui-dropdown><span>Mihir</span></div>
+      </header>
+      <script>requestAnimationFrame(() => {
+        window.firstFrame = {
+          visible: [...document.querySelectorAll('header nav > a, header nav > ui-dropdown > button, header ui-dropdown > button[aria-label]')].filter((el) => el.offsetParent !== null).map((el) => el.textContent),
+          launcher: !!document.querySelector('header mantis-ai-launcher'),
+        };
+      });</script>
+      <main><h1>Ticket</h1></main></div></body></html>`;
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: { 'https://projects.webmavens.dev/': () => ({ body: page }) } });
+    await mantis.until(`window.firstFrame`);
+    assert.deepEqual(await mantis.eval(`window.firstFrame`), { visible: ['Tickets', 'My Work'], launcher: true });
+    await mantis.close();
   });
 
   test('keyboard shortcuts open the panels on a Mantis ticket page', async () => {

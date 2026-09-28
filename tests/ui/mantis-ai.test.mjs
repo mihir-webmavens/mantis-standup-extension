@@ -17,6 +17,7 @@ const routes = {
     if (['content.js', 'button-styles.js', 'mantis-ai.js'].includes(file)) {
       return { body: fs.readFileSync(new URL(file, ROOT)), headers: { 'Content-Type': 'text/javascript' } };
     }
+    if (file === 'mantis-header.css') return { body: fs.readFileSync(new URL(file, ROOT)), headers: { 'Content-Type': 'text/css' } };
     return { body: HARNESS };
   },
 };
@@ -44,10 +45,10 @@ describe('MantisAI panel', { skip: !chromePath && 'no Chrome/Chromium found (set
     });
     assert.deepEqual(r, { parent: 'right', nextIs: 'Bell', label: 'MantisAI', edgeTab: false });
 
-    // Livewire re-rendering the header drops our button; it comes back.
+    // Livewire re-rendering the header drops our button; it is back before the next frame is drawn.
     const back = await run(withHeader, async () => {
       document.querySelector('mantis-ai-launcher').remove();
-      await T.wait(1200);
+      await new Promise((r) => requestAnimationFrame(r));
       return document.querySelector('header mantis-ai-launcher') !== null;
     });
     assert.equal(back, true);

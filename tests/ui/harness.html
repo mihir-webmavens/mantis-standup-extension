@@ -8,12 +8,14 @@
        header=1      a Mantis-like header bar             ai=<mode>    MantisAI helper: reply (default) | slow | error | setup |
                                                                         lookup (reads a ticket) | approve (asks to resolve it) | noauth -->
 <html>
-<head><meta charset="utf-8"><title>Mantis</title></head>
+<head><meta charset="utf-8"><title>Mantis</title><link rel="stylesheet" href="/mantis-header.css"></head>
 <body style="margin:0;height:100vh;background:#f9fafb;font-family:sans-serif">
   <script>
     if (new URLSearchParams(location.search).get('header')) {
       document.write(`<header style="display:flex;justify-content:space-between;align-items:center;height:56px;padding:0 16px;background:#fff;border-bottom:1px solid #eee">
-        <a href="/">Mantis</a><nav><a href="/tickets">Tickets</a></nav>
+        <a href="/">Mantis</a>
+        <nav data-flux-navbar><a href="https://projects.webmavens.dev/tickets">Tickets</a><a href="https://projects.webmavens.dev/my-work">My Work</a><a href="https://projects.webmavens.dev/chat">Chat</a><a href="https://projects.webmavens.dev/tickets?unassigned=1">Unassigned</a><a href="https://projects.webmavens.dev/todos">Todos</a><a href="https://projects.webmavens.dev/notifications">Notifications</a><ui-dropdown><button type="button">GitHub</button><ui-menu><a href="https://projects.webmavens.dev/github/activity">Activity</a></ui-menu></ui-dropdown></nav>
+        <div><ui-dropdown><button type="button" aria-label="Switch project">All projects</button></ui-dropdown></div>
         <div class="right" style="display:flex;align-items:center;gap:8px"><span>Bell</span><span class="avatar">MS</span></div></header>`);
     }
   </script>

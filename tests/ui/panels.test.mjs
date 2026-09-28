@@ -18,6 +18,7 @@ const routes = {
     if (['content.js', 'button-styles.js', 'mantis-ai.js'].includes(file)) {
       return { body: fs.readFileSync(new URL(file, ROOT)), headers: { 'Content-Type': 'text/javascript' } };
     }
+    if (file === 'mantis-header.css') return { body: fs.readFileSync(new URL(file, ROOT)), headers: { 'Content-Type': 'text/css' } };
     return { body: HARNESS };
   },
 };
@@ -236,6 +237,14 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
       return T.root().querySelector('.panel-eod .status a')?.href;
     });
     assert.equal(href, 'https://standup.webmavens.dev/login');
+    await page.close();
+  });
+
+  test('hides Unassigned, Todos, GitHub and the project switcher in the Mantis header', async () => {
+    const page = await openMantis('tickets/123?header=1');
+    const visible = () => run(page, async () => [...document.querySelectorAll('header nav > a, header nav > ui-dropdown > button, header ui-dropdown > button[aria-label]')]
+      .filter((el) => el.offsetParent !== null).map((el) => el.textContent));
+    assert.deepEqual(await visible(), ['Tickets', 'My Work', 'Chat', 'Notifications']);
     await page.close();
   });
 });

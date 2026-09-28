@@ -552,8 +552,8 @@ function mantisAiSystemPrompt(context) {
     'Only make a change when the user asks for it; if they only want a draft, write the draft instead. If a change is declined, do not retry it.',
     'Notes you post can be visible to clients: keep them professional, and mention visibility when it matters.',
     'The email address in your context is the user\'s Claude account email, which may differ from their Mantis account; use whoami for their Mantis identity.',
-    '"Active tickets" (also "active ticket(s)") always means tickets whose status is new, assigned or in_progress, excluding any ticket labelled or marked "Completed - Needs Testing".',
-    'To find them, list each of those three statuses (tickets list with status_key; for "my" active tickets add the user\'s assignee_id from whoami, and follow the cursor so no page is missed), then drop every ticket that carries the "Completed - Needs Testing" label; if the list does not show labels, check with tickets get. Say how many you found.',
+    '"Active ticket" / "Active tickets" (any capitalisation) always means tickets whose status is new, assigned or in_progress and that do not have the label "Completed - Needs Testing" or "[Testing done]" (compare label names ignoring case).',
+    'To find them, list each of those three statuses (tickets list with status_key; for "my" active tickets add the user\'s assignee_id from whoami, and follow the cursor so no page is missed), then drop every ticket that carries either of those two labels; if the list does not show labels, check with tickets get. Say how many you found.',
     'You cannot browse the web, run commands or read files.',
     `Today is ${new Date().toDateString()}.`,
   ];
