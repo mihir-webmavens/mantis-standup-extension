@@ -10,6 +10,10 @@
 //        { type: 'tool', id, tool, input }, { type: 'tool_result', id, isError },
 //        { type: 'approval', id, toolUseId, tool, input } … then { type: 'done', sessionId, text }
 //   in   { type: 'approve', id, allow }   (the user's answer to an approval)
+//   in   { type: 'commits', repos, since, until }   (EOD from commits: full repo paths, ISO times)
+//   out  { type: 'commits', commits: [{ repo, hash, date, message }], errors: [{ repo, error }] }
+//   in   { type: 'summarize', prompt, system, model? }
+//   out  { type: 'summary', text }
 //   out  { type: 'error', code, error } at any point
 // When Chrome closes the port, stdin ends: the running claude is stopped and we exit.
 //
@@ -19,6 +23,10 @@
 // call passes a PreToolUse gate (this file, run with --approve-hook): read actions
 // go through, anything else waits for the user's Approve/Deny in the panel. No tool
 // is pre-allowed, so when the gate fails or times out the CLI refuses the call.
+//
+// For EODs written from commits, `commits` runs read-only `git log` in the folders
+// the user listed (their own commits only, by the repo's user.email) and
+// `summarize` runs claude with no tools and no MCP servers at all.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -27,9 +35,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HOST_VERSION = '1.1.0';
+const HOST_VERSION = '1.2.0';
 const HOST_FILE = fileURLToPath(import.meta.url);
 const CLAUDE = process.env.MANTIS_AI_CLAUDE || 'claude';
+const GIT = process.env.MANTIS_AI_GIT || 'git';
 const HOME = process.env.MANTIS_AI_HOME || path.join(os.homedir(), '.local', 'share', 'mantis-ai');
 const WORKSPACE = path.join(HOME, 'workspace'); // sessions are stored per directory, so it must stay the same
 const IDLE_TIMEOUT_MS = Number(process.env.MANTIS_AI_TIMEOUT_MS) || 5 * 60 * 1000;
@@ -157,6 +166,8 @@ function handle(msg) {
   if (msg?.type === 'ping') return ping();
   if (msg?.type === 'chat') return chat(msg);
   if (msg?.type === 'approve') return answerApproval?.(msg.id, msg.allow === true);
+  if (msg?.type === 'commits') return commits(msg);
+  if (msg?.type === 'summarize') return summarize(msg);
   fail('bad-request', `Unknown request "${msg?.type}".`);
 }
 
@@ -355,6 +366,136 @@ function chat({ prompt, system, sessionId, model }) {
       }
     }
   }
+}
+
+// ---------- EOD from commits: today's commits ----------
+
+// %x1f between fields, %x1e after each commit (messages may contain newlines).
+const LOG_FORMAT = '--format=%H%x1f%ae%x1f%aI%x1f%B%x1e';
+
+function commits({ repos, since, until }) {
+  if (!Array.isArray(repos) || !repos.length || !repos.every((r) => typeof r === 'string' && path.isAbsolute(r))) {
+    return fail('bad-request', 'List your repo folders as full paths.');
+  }
+  const from = new Date(since);
+  const to = new Date(until);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) return fail('bad-request', 'Invalid time range.');
+
+  Promise.all([...new Set(repos)].map((repo) => repoCommits(repo, from, to).then(
+    (list) => ({ list }),
+    (err) => ({ error: { repo, error: err.message } }),
+  ))).then((results) => {
+    const seen = new Set(); // the same commit can be in two listed clones
+    const list = results.flatMap((r) => r.list || []).filter((c) => !seen.has(c.hash) && seen.add(c.hash));
+    send({ type: 'commits', commits: list, errors: results.filter((r) => r.error).map((r) => r.error) });
+  });
+}
+
+// The user's own commits authored in [from, to), on any branch. --since filters by
+// commit date, which is never before the author date, so it only narrows the search.
+async function repoCommits(repo, from, to) {
+  let email;
+  try {
+    email = (await git(repo, ['config', 'user.email'])).trim().toLowerCase();
+  } catch (err) {
+    if (err.exitCode === 1) throw new Error('No git user.email is set for this repo, so your commits cannot be told apart.');
+    throw err;
+  }
+  const out = await git(repo, ['log', '--all', '--no-merges', `--since=${from.toISOString()}`, LOG_FORMAT]);
+  return out.split('\x1e').map((entry) => entry.replace(/^\n/, '')).filter(Boolean).map((entry) => {
+    const [hash, author, date, message = ''] = entry.split('\x1f');
+    return { repo, hash, author: author.toLowerCase(), date, message: message.trim() };
+  }).filter((c) => {
+    const at = new Date(c.date);
+    return c.author === email && at >= from && at < to;
+  }).map(({ author, ...c }) => c);
+}
+
+function git(repo, args) {
+  return new Promise((resolve, reject) => {
+    let out = '';
+    let err = '';
+    let child;
+    try {
+      child = spawn(GIT, ['-C', repo, '--no-pager', ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    } catch (e) {
+      return reject(e);
+    }
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d) => { err = (err + d).slice(-2000); });
+    child.on('error', (e) => reject(new Error(e.code === 'ENOENT' ? `git was not found (${GIT}).` : e.message)));
+    child.on('close', (code) => {
+      if (code === 0) return resolve(out);
+      reject(Object.assign(new Error(err.trim().split('\n')[0] || `git exited with code ${code}.`), { exitCode: code }));
+    });
+  });
+}
+
+// ---------- EOD from commits: the summary ----------
+
+// One answer, no tools, no MCP servers, no settings of the user's; kept out of the chat workspace.
+function summarize({ prompt, system, model }) {
+  if (typeof prompt !== 'string' || !prompt.trim()) return fail('bad-request', 'Empty message.');
+  const cwd = path.join(HOME, 'eod');
+  fs.mkdirSync(cwd, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-'));
+  const systemFile = path.join(tmp, 'system.txt');
+  fs.writeFileSync(systemFile, typeof system === 'string' && system.trim() ? system : 'Summarize the work described.');
+  const args = [
+    '-p', '--output-format', 'json',
+    '--tools', '', '--setting-sources', '', '--disable-slash-commands', '--strict-mcp-config',
+    '--system-prompt-file', systemFile,
+  ];
+  if (MODELS.has(model)) args.push('--model', model);
+
+  let finished = false;
+  let out = '';
+  let stderr = '';
+  let child;
+  const finish = (msg) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    send(msg);
+  };
+  const timer = setTimeout(() => {
+    finish({ type: 'error', code: 'timeout', error: 'Claude took too long to answer. Try again.' });
+    child?.kill('SIGTERM');
+  }, IDLE_TIMEOUT_MS);
+
+  try {
+    child = spawn(CLAUDE, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (err) {
+    return finish({ type: 'error', code: 'claude-missing', error: claudeMissing(err) });
+  }
+  children.add(child);
+  child.stdin.on('error', () => {});
+  child.stdin.end(prompt);
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
+  child.on('error', (err) => {
+    children.delete(child);
+    finish({ type: 'error', code: 'claude-missing', error: claudeMissing(err) });
+  });
+  child.on('close', (code, signal) => {
+    children.delete(child);
+    if (signal) return finish({ type: 'error', code: 'stopped', error: 'Stopped.' });
+    const result = out.split('\n').map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    }).find((ev) => ev?.type === 'result');
+    if (result && !result.is_error && String(result.result || '').trim()) return finish({ type: 'summary', text: String(result.result).trim() });
+    const detail = result ? [...(result.errors || []), result.result].filter(Boolean).join(' ') : '';
+    finish({ type: 'error', ...classify(detail || stderr || `claude exited with code ${code}.`) });
+  });
 }
 
 // Turns CLI error text into a code the extension can explain.

@@ -80,7 +80,7 @@ function fakePort(name) {
  * the way Chrome reports it (e.g. 'Specified native messaging host not found.').
  */
 export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError } = {}) {
-  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, nativePorts: [] };
+  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, local: {}, nativePorts: [] };
   const events = {
     message: event(), installed: event(), startup: event(), alarm: event(), storage: event(),
     permAdded: event(), command: event(), noteClicked: event(), noteButton: event(), connect: event(),
@@ -127,6 +127,7 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
     storage: {
       sync: { get: async (key) => ({ [key]: storage[key] }) },
       session: { set: async (items) => { Object.assign(state.session, items); } },
+      local: { get: async (key) => ({ [key]: state.local[key] }), set: async (items) => { Object.assign(state.local, plain(items)); } },
       onChanged: events.storage,
     },
     permissions: {

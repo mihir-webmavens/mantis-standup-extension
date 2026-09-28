@@ -107,6 +107,33 @@
         </div>
       </section>
 
+      <section class="reminder auto-eod" id="auto-eod" aria-labelledby="ae-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="ae-title">EOD from commits</h2>
+            <p class="sub">Fills empty EODs from your commits of the day that mention the ticket number. Tickets without a commit are left alone.</p>
+          </div>
+          <label class="switch" title="Turn EOD from commits on or off">
+            <input type="checkbox" id="ae-enabled" role="switch" aria-labelledby="ae-title">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="rem-opts">
+          <label class="field">At <input type="time" id="ae-time" value="19:00" required></label>
+          <label class="check"><input type="checkbox" id="ae-weekdays"> Weekdays only</label>
+        </div>
+        <label class="ae-repos">Repo folders <span class="sub">(full paths, one per line)</span>
+          <textarea id="ae-repos" rows="3" spellcheck="false" placeholder="/home/you/projects/my-app"></textarea>
+        </label>
+        <div class="ae-actions">
+          <button type="button" class="pill" id="ae-preview">Preview</button>
+          <button type="button" class="pill" id="ae-run">Run now</button>
+          <span class="sub ae-last"></span>
+        </div>
+        <div class="ae-result" role="status" hidden></div>
+        <p class="sub ae-note">Uses the MantisAI helper below: git reads your commits (by the repo's <code>user.email</code>), the Claude CLI writes each EOD. Chrome must be open at that time.</p>
+      </section>
+
       <section class="shortcuts" aria-labelledby="keys-title">
         <div class="keys-head">
           <div>

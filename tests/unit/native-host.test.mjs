@@ -4,7 +4,7 @@
 import { test, describe } from 'node:test';
 import { isReadOnly } from '../../native-host/mantis-ai-host.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,7 +47,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
           const allow = onApproval(msg);
           if (allow !== undefined) send({ type: 'approve', id: msg.id, allow });
         }
-        if (['done', 'error', 'pong'].includes(msg.type) || msg.type === stopAfter) end();
+        if (['done', 'error', 'pong', 'commits', 'summary'].includes(msg.type) || msg.type === stopAfter) end();
       }
     });
     const send = (msg) => {
@@ -63,7 +63,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
 describe('MantisAI helper', () => {
   test('ping reports the Claude CLI version', async () => {
     const { replies } = await talk({ type: 'ping' });
-    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.1.0', claudeVersion: '9.9.9 (Claude Code)' }]);
+    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.2.0', claudeVersion: '9.9.9 (Claude Code)' }]);
   });
 
   test('streams a reply and returns the conversation id', async () => {
@@ -191,5 +191,62 @@ describe('MantisAI gate (Mantis tool calls)', () => {
   test('reports when the Mantis connection is not signed in', async () => {
     const { replies } = await talk({ type: 'chat', prompt: 'hi' }, { mcp: 'needs-auth' });
     assert.deepEqual(replies.find((r) => r.type === 'mantis'), { type: 'mantis', status: 'needs-auth' });
+  });
+});
+
+describe('MantisAI helper: EOD from commits', () => {
+  // A throwaway repo with commits by the user and by a teammate, at fixed times.
+  function repo() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-repo-'));
+    const git = (args, env = {}) => spawnSync('git', ['-C', dir, ...args], { env: { ...process.env, ...env } });
+    git(['init', '-q', '-b', 'main']);
+    git(['config', 'user.email', 'Me@Example.com']);
+    git(['config', 'user.name', 'Me']);
+    const commit = (message, date, email = 'me@example.com') => git(['commit', '-q', '--allow-empty', '-m', message],
+      { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date, GIT_AUTHOR_EMAIL: email });
+    commit('Old work #8386', '2026-09-27T12:00:00Z');
+    commit('Retry the job #8386\n\nWith a backoff.', '2026-09-28T09:00:00Z');
+    commit('Teammate on #8386', '2026-09-28T10:00:00Z', 'mate@example.com');
+    git(['checkout', '-q', '-b', 'feature']);
+    commit('Feature branch work #8390', '2026-09-28T11:00:00Z');
+    return dir;
+  }
+  const day = { since: '2026-09-28T00:00:00Z', until: '2026-09-29T00:00:00Z' };
+
+  test('lists the user\'s own commits of the day on every branch', async () => {
+    const dir = repo();
+    const { replies } = await talk({ type: 'commits', repos: [dir, '/nonexistent/repo'], ...day }, { stopAfter: 'commits' });
+    fs.rmSync(dir, { recursive: true, force: true });
+    const [reply] = replies;
+    assert.equal(reply.type, 'commits');
+    assert.deepEqual(reply.commits.map((c) => c.message).sort(), ['Feature branch work #8390', 'Retry the job #8386\n\nWith a backoff.']);
+    assert.ok(reply.commits.every((c) => c.repo === dir && /^[0-9a-f]{40}$/.test(c.hash)));
+    assert.equal(reply.errors.length, 1);
+    assert.equal(reply.errors[0].repo, '/nonexistent/repo');
+  });
+
+  test('refuses relative paths and bad times', async () => {
+    const rel = await talk({ type: 'commits', repos: ['projects/app'], ...day });
+    assert.equal(rel.replies[0].code, 'bad-request');
+    const bad = await talk({ type: 'commits', repos: ['/tmp'], since: 'x', until: day.until });
+    assert.equal(bad.replies[0].code, 'bad-request');
+  });
+
+  test('summarize runs claude with no tools, no MCP servers and no session in the chat workspace', async () => {
+    const { replies, claudeRun } = await talk({ type: 'summarize', prompt: 'Ticket #8386 ...', system: 'Write the EOD.', model: 'haiku' }, { stopAfter: 'summary' });
+    assert.deepEqual(replies, [{ type: 'summary', text: 'Hello **there**' }]);
+    const { args } = claudeRun;
+    assert.equal(args[args.indexOf('--tools') + 1], '');
+    assert.ok(args.includes('--strict-mcp-config') && !args.includes('--mcp-config') && !args.includes('--settings'));
+    assert.ok(!args.some((a) => /allowed-?tools|dangerously|permission-mode|resume/i.test(a)));
+    assert.equal(args[args.indexOf('--model') + 1], 'haiku');
+    assert.equal(claudeRun.stdin, 'Ticket #8386 ...');
+    assert.equal(claudeRun.system, 'Write the EOD.');
+    assert.ok(claudeRun.cwd.endsWith(`${path.sep}eod`));
+  });
+
+  test('summarize explains a logged-out CLI', async () => {
+    const { replies } = await talk({ type: 'summarize', prompt: 'x', system: 'y' }, { mode: 'auth' });
+    assert.equal(replies.at(-1).code, 'auth');
   });
 });

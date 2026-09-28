@@ -164,6 +164,153 @@ function setupReminder(kind) {
 setupReminder('standup');
 setupReminder('eod');
 
+// ---------- EOD from commits ----------
+// Settings for background.js's daily run; Preview shows the matches without saving.
+
+const AUTO_EOD_KEY = 'autoEod';
+const AUTO_EOD_LAST_KEY = 'autoEodLastRun';
+const AUTO_EOD_DEFAULTS = { enabled: false, time: '19:00', weekdaysOnly: false, repos: [] };
+
+const ae = {
+  box: document.querySelector('#auto-eod'),
+  enabled: document.querySelector('#ae-enabled'),
+  time: document.querySelector('#ae-time'),
+  weekdays: document.querySelector('#ae-weekdays'),
+  repos: document.querySelector('#ae-repos'),
+  preview: document.querySelector('#ae-preview'),
+  run: document.querySelector('#ae-run'),
+  last: document.querySelector('.ae-last'),
+  result: document.querySelector('.ae-result'),
+};
+let autoEod = { ...AUTO_EOD_DEFAULTS };
+
+const parseRepos = (text) => [...new Set(text.split('\n').map((l) => l.trim()).filter(Boolean))];
+
+function renderAutoEod() {
+  ae.enabled.checked = autoEod.enabled;
+  ae.time.value = autoEod.time;
+  ae.weekdays.checked = autoEod.weekdaysOnly;
+  if (document.activeElement !== ae.repos) ae.repos.value = autoEod.repos.join('\n');
+  ae.box.classList.toggle('on', autoEod.enabled);
+}
+
+async function saveAutoEod(changes, message) {
+  autoEod = { ...autoEod, ...changes };
+  renderAutoEod();
+  try {
+    await chrome.storage.sync.set({ [AUTO_EOD_KEY]: autoEod });
+    if (message) showStatus(message);
+  } catch (err) {
+    showStatus(`Could not save: ${err.message}`, true);
+  }
+}
+
+function autoEodSummary() {
+  const [h, m] = autoEod.time.split(':').map(Number);
+  const at = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `EOD from commits on · ${at} ${autoEod.weekdaysOnly ? 'on weekdays' : 'every day'}`;
+}
+
+function renderLastRun(run) {
+  if (!run?.ranAt) return;
+  const when = new Date(run.ranAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  ae.last.textContent = run.error ? `Last run ${when}: failed` : `Last run ${when}: ${run.filled.length} filled`;
+  ae.last.title = run.error || '';
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function renderAutoEodResult(result, error) {
+  ae.result.replaceChildren();
+  ae.result.hidden = false;
+  ae.result.classList.toggle('err', Boolean(error));
+  if (error) return ae.result.append(error);
+  if (!result.pending) return ae.result.append('No empty EODs to fill.');
+  if (result.dryRun) {
+    ae.result.append(result.matches.length
+      ? `${result.matches.length} of ${result.pending} empty EODs have commits today:`
+      : `None of the ${result.pending} empty EODs have a commit today that mentions their ticket.`);
+    const ul = el('ul');
+    for (const m of result.matches) {
+      const li = el('li');
+      li.append(el('strong', null, `#${m.ticket}`), ` · ${m.commits.join(' · ')}`);
+      ul.append(li);
+    }
+    if (result.matches.length) ae.result.append(ul);
+  } else {
+    ae.result.append(result.filled.length ? `Filled ${result.filled.length} EOD${result.filled.length === 1 ? '' : 's'}:` : 'No EODs were filled: no empty EOD has a commit today that mentions its ticket.');
+    const ul = el('ul');
+    for (const f of result.filled) {
+      const li = el('li');
+      li.append(el('strong', null, `#${f.ticket}`), ` · ${f.update}`);
+      ul.append(li);
+    }
+    if (result.filled.length) ae.result.append(ul);
+  }
+  const problems = [...result.errors.map((e) => `#${e.ticket}: ${e.error}`), ...result.repoErrors.map((e) => `${e.repo}: ${e.error}`)];
+  if (problems.length) {
+    const ul = el('ul', 'ae-problems');
+    for (const p of problems) ul.append(el('li', null, p));
+    ae.result.append(ul);
+  }
+}
+
+async function runAutoEodFromPopup(type, button, busyLabel) {
+  const label = button.textContent;
+  ae.preview.disabled = ae.run.disabled = true;
+  button.textContent = busyLabel;
+  try {
+    const res = await chrome.runtime.sendMessage({ type }).catch((err) => ({ ok: false, error: err.message }));
+    renderAutoEodResult(res?.result, res?.ok ? null : res?.error || 'Something went wrong.');
+    if (res?.ok && !res.result.dryRun) renderLastRun(res.result);
+  } finally {
+    button.textContent = label;
+    ae.preview.disabled = ae.run.disabled = false;
+  }
+}
+
+ae.enabled.addEventListener('change', async () => {
+  if (!ae.enabled.checked) return saveAutoEod({ enabled: false }, 'EOD from commits off');
+  // Straight from the click (Chrome requires a user gesture); a result notification is optional.
+  const notified = askForNotifications();
+  if (!autoEod.repos.length) {
+    ae.enabled.checked = false;
+    ae.repos.focus();
+    return showStatus('Add at least one repo folder first.', true);
+  }
+  if (!(await chrome.permissions.contains({ permissions: ['nativeMessaging'] }).catch(() => false))) {
+    ae.enabled.checked = false;
+    showMantisAi();
+    return showStatus('Set up MantisAI first: it reads your commits and writes the EODs.', true);
+  }
+  await notified;
+  saveAutoEod({ enabled: true }, autoEodSummary());
+});
+ae.time.addEventListener('change', () => {
+  if (/^\d{2}:\d{2}$/.test(ae.time.value)) saveAutoEod({ time: ae.time.value }, autoEod.enabled ? autoEodSummary() : 'Saved');
+  else renderAutoEod();
+});
+ae.weekdays.addEventListener('change', () => saveAutoEod({ weekdaysOnly: ae.weekdays.checked }, autoEod.enabled ? autoEodSummary() : 'Saved'));
+ae.repos.addEventListener('change', () => {
+  const repos = parseRepos(ae.repos.value);
+  const relative = repos.find((r) => !r.startsWith('/'));
+  if (relative) return showStatus(`Use full paths (starting with /): ${relative}`, true);
+  saveAutoEod({ repos, ...(repos.length ? {} : { enabled: false }) }, `${repos.length} repo folder${repos.length === 1 ? '' : 's'} saved`);
+});
+ae.preview.addEventListener('click', () => runAutoEodFromPopup('previewAutoEod', ae.preview, 'Checking…'));
+ae.run.addEventListener('click', () => runAutoEodFromPopup('runAutoEod', ae.run, 'Writing…'));
+
+Promise.all([chrome.storage.sync.get(AUTO_EOD_KEY), chrome.storage.local.get(AUTO_EOD_LAST_KEY)]).then(([stored, local]) => {
+  autoEod = { ...AUTO_EOD_DEFAULTS, ...stored[AUTO_EOD_KEY] };
+  renderAutoEod();
+  renderLastRun(local[AUTO_EOD_LAST_KEY]);
+}, renderAutoEod);
+
 // ---------- keyboard shortcuts ----------
 // Bindings belong to Chrome (manifest "commands"); it saves changes and
 // rejects keys already in use, leaving a conflicting default unset.

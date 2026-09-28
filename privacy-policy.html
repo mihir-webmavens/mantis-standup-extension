@@ -197,6 +197,15 @@
       saved in Chrome’s local extension storage on your computer so they are still there when you come back. <strong>New chat</strong>
       deletes the conversation for that ticket.
     </p>
+    <p>
+      <strong>EOD from commits</strong> (optional, off until you turn it on in Settings) also uses the helper. At the time you
+      choose, it reads your EOD list from <code>standup.webmavens.dev</code>; for EODs that are still empty, the helper runs
+      <code>git log</code> in the repo folders you listed and returns only your own commits from that day (matched by each repo’s
+      <code>user.email</code>). For each ticket with a commit that mentions its number, the ticket number, its planned action
+      and those commit messages go to Claude through your Claude CLI, which writes the EOD; that Claude run has no tools and no
+      Mantis connection. The EOD is then saved on <code>standup.webmavens.dev</code> like one you typed. The repo folder list
+      is kept with your settings; the last run’s result stays in Chrome’s local storage on your computer.
+    </p>
   </section>
 
   <section>
