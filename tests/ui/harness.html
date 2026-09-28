@@ -4,11 +4,20 @@
      Query options:
        n=<count>     number of EODs (odd ones filled)     allfilled=1  every EOD filled
        dup=<count>   same-day standups for ticket 123     prio=<level> ticket shows this priority
-       err=1         EOD list fails (logged out)          saveerr=1    saving an EOD fails -->
+       err=1         EOD list fails (logged out)          saveerr=1    saving an EOD fails
+       header=1      a Mantis-like header bar             ai=<mode>    MantisAI helper: reply (default) | slow | error | setup |
+                                                                        lookup (reads a ticket) | approve (asks to resolve it) | noauth -->
 <html>
 <head><meta charset="utf-8"><title>Mantis</title></head>
 <body style="margin:0;height:100vh;background:#f9fafb;font-family:sans-serif">
-  <h1 style="padding:20px;margin:0">Mantis page</h1>
+  <script>
+    if (new URLSearchParams(location.search).get('header')) {
+      document.write(`<header style="display:flex;justify-content:space-between;align-items:center;height:56px;padding:0 16px;background:#fff;border-bottom:1px solid #eee">
+        <a href="/">Mantis</a><nav><a href="/tickets">Tickets</a></nav>
+        <div class="right" style="display:flex;align-items:center;gap:8px"><span>Bell</span><span class="avatar">MS</span></div></header>`);
+    }
+  </script>
+  <main><h1 style="padding:20px;margin:0">Mantis page</h1><p>Ticket body: the login page loops.</p></main>
   <script>
     const q = new URLSearchParams(location.search);
     if (q.get('prio')) document.body.insertAdjacentHTML('beforeend', `<div><span>Priority</span><span>${q.get('prio')}</span></div>`);
@@ -34,6 +43,8 @@
     window.T = {
       sent: [], payloads: [], leaked: 0, onMessage: null,
       root: () => document.querySelector('mantis-quick-standup').shadowRoot,
+      ai: () => document.querySelector('mantis-ai').shadowRoot,
+      aiPorts: [], local: {},
       wait: (ms) => new Promise((r) => setTimeout(r, ms)),
       // Synthetic key event on the focused element inside the extension UI.
       key: (key, init = {}) => (T.root().activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init })),
@@ -44,8 +55,55 @@
 
     // Chrome already defines window.chrome on pages (writable, not configurable); replace it.
     window.chrome = {
-      storage: { sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+      storage: {
+        sync: { get: async () => ({}) },
+        local: { get: async (key) => structuredClone({ [key]: T.local[key] }), set: async (items) => { Object.assign(T.local, structuredClone(items)); } },
+        onChanged: { addListener() {} },
+      },
       runtime: {
+        // The MantisAI port to background.js; the helper's behaviour comes from ?ai=.
+        connect: ({ name }) => {
+          const listeners = { message: [], disconnect: [] };
+          const port = {
+            name, sent: [], disconnected: false,
+            onMessage: { addListener: (f) => listeners.message.push(f) },
+            onDisconnect: { addListener: (f) => listeners.disconnect.push(f) },
+            disconnect: () => { port.disconnected = true; },
+            postMessage: async (msg) => {
+              port.sent.push(structuredClone(msg));
+              const reply = (m) => { if (!port.disconnected) listeners.message.forEach((f) => f(m)); };
+              if (msg.type === 'approve') return port.onApprove?.(msg);
+              const mode = q.get('ai') || 'reply';
+              await T.wait(30);
+              if (mode === 'noauth') reply({ type: 'mantis', status: 'needs-auth' });
+              if (mode === 'lookup' || mode === 'approve') {
+                reply({ type: 'session', sessionId: '11111111-2222-4333-8444-555555555555' });
+                reply({ type: 'mantis', status: 'connected' });
+                reply({ type: 'tool', id: 'toolu_1', tool: 'tickets', input: { action: 'get', ticket_id: 123 } });
+                await T.wait(30);
+                reply({ type: 'tool_result', id: 'toolu_1', isError: false });
+                if (mode === 'approve') {
+                  reply({ type: 'delta', text: 'I will resolve it.' });
+                  reply({ type: 'tool', id: 'toolu_2', tool: 'tickets', input: { action: 'change_status', ticket_id: 123, status_key: 'resolved' } });
+                  reply({ type: 'approval', id: 7, toolUseId: 'toolu_2', tool: 'tickets', input: { action: 'change_status', ticket_id: 123, status_key: 'resolved' } });
+                  const { allow } = await new Promise((resolve) => { port.onApprove = resolve; });
+                  reply({ type: 'tool_result', id: 'toolu_2', isError: !allow });
+                  reply({ type: 'delta', text: allow ? ' Done.' : ' Left it open.' });
+                }
+                return reply({ type: 'done', sessionId: '11111111-2222-4333-8444-555555555555', text: '' });
+              }
+              if (mode === 'setup') return reply({ type: 'error', code: 'not-installed', error: 'The MantisAI helper is not installed on this computer.' });
+              if (mode === 'error') return reply({ type: 'error', code: 'auth', error: 'The Claude CLI is not logged in. Run `claude` in a terminal, log in, then try again.' });
+              reply({ type: 'session', sessionId: msg.sessionId || '11111111-2222-4333-8444-555555555555' });
+              await T.wait(mode === 'slow' ? 400 : 30);
+              const pieces = ['Here is **the plan**:\n\n', '1. Fix `login`\n2. Ship it\n\n', '```js\nconst a = "<b>";\n```'];
+              for (const text of pieces) { reply({ type: 'delta', text }); await T.wait(mode === 'slow' ? 300 : 10); }
+              reply({ type: 'done', sessionId: msg.sessionId || '11111111-2222-4333-8444-555555555555', text: pieces.join('') });
+            },
+          };
+          T.aiPorts.push(port);
+          return port;
+        },
         onMessage: { addListener: (f) => { T.onMessage = f; } },
         sendMessage: async ({ type, payload }) => {
           T.sent.push(type);
@@ -68,6 +126,7 @@
     };
   </script>
   <script src="/button-styles.js"></script>
+  <script src="/mantis-ai.js"></script>
   <script src="/content.js"></script>
 </body>
 </html>

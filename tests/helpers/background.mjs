@@ -60,12 +60,30 @@ function event() {
   return { addListener: (f) => listeners.push(f), fire: (...args) => Promise.all(listeners.map((f) => f(...args))), listeners };
 }
 
-/** Loads background.js. `notifications: true` means the optional permission is granted. */
-export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage } = {}) {
-  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {} };
+// One end of a runtime port: what the other side sent is in `received`.
+function fakePort(name) {
+  const port = {
+    name, received: [], disconnected: false, onMessage: event(), onDisconnect: event(),
+    postMessage: (msg) => {
+      if (port.disconnected) throw new Error('Attempting to use a disconnected port object');
+      port.received.push(JSON.parse(JSON.stringify(msg)));
+    },
+    disconnect: () => { port.disconnected = true; },
+  };
+  return port;
+}
+
+/**
+ * Loads background.js. `notifications: true` means the optional permission is granted.
+ * MantisAI: `nativeMessaging: true` grants that permission; `nativeHost(request, reply)`
+ * plays the helper (reply(msg) sends to the extension); `hostError` makes connecting fail
+ * the way Chrome reports it (e.g. 'Specified native messaging host not found.').
+ */
+export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError } = {}) {
+  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, nativePorts: [] };
   const events = {
     message: event(), installed: event(), startup: event(), alarm: event(), storage: event(),
-    permAdded: event(), command: event(), noteClicked: event(), noteButton: event(),
+    permAdded: event(), command: event(), noteClicked: event(), noteButton: event(), connect: event(),
   };
   const notificationsApi = {
     create: (id, options) => { state.notes[id] = options; },
@@ -73,8 +91,28 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
     onClicked: events.noteClicked,
     onButtonClicked: events.noteButton,
   };
+  const connectNative = (name) => {
+    const port = fakePort(name);
+    port.postMessage = (msg) => {
+      port.received.push(JSON.parse(JSON.stringify(msg)));
+      setTimeout(() => {
+        if (hostError) {
+          chrome.runtime.lastError = { message: hostError };
+          port.onDisconnect.fire();
+          delete chrome.runtime.lastError;
+          return;
+        }
+        nativeHost?.(msg, (reply) => { if (!port.disconnected) port.onMessage.fire(reply); });
+      });
+    };
+    state.nativePorts.push(port);
+    return port;
+  };
   const chrome = {
-    runtime: { onMessage: events.message, onInstalled: events.installed, onStartup: events.startup },
+    runtime: {
+      onMessage: events.message, onInstalled: events.installed, onStartup: events.startup, onConnect: events.connect,
+      connectNative: nativeMessaging ? connectNative : undefined,
+    },
     action: {
       setBadgeText: ({ text }) => { state.badge.text = text; },
       setBadgeBackgroundColor: ({ color }) => { state.badge.color = color; },
@@ -91,7 +129,10 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
       session: { set: async (items) => { Object.assign(state.session, items); } },
       onChanged: events.storage,
     },
-    permissions: { onAdded: events.permAdded },
+    permissions: {
+      onAdded: events.permAdded,
+      contains: async ({ permissions }) => permissions.every((p) => (p === 'nativeMessaging' ? nativeMessaging : p === 'notifications' ? notifications : false)),
+    },
     tabs: {
       create: ({ url }) => { state.tabs.push(url); },
       sendMessage: async (tabId, msg) => {
@@ -116,6 +157,25 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
     grantNotifications: () => { chrome.notifications = notificationsApi; return events.permAdded.fire(); },
     setReminder: async (reminder) => { storage.eodReminder = reminder; await events.storage.fire({ eodReminder: {} }, 'sync'); },
     fireAlarm: (name, scheduledTime = Date.now()) => events.alarm.fire({ name, scheduledTime }),
+    // Opens a 'mantis-ai' port the way the chat panel does and sends `msg`;
+    // resolves with everything received once a done/error arrives (or after `wait` ms).
+    chat: (msg, { wait = 500, disconnectAfter } = {}) => new Promise((resolve) => {
+      const port = fakePort('mantis-ai');
+      const finish = () => resolve(port.received);
+      const timer = setTimeout(finish, wait);
+      port.postMessage = (reply) => {
+        port.received.push(JSON.parse(JSON.stringify(reply)));
+        if (reply.type === disconnectAfter) {
+          port.onDisconnect.fire();
+          setTimeout(() => { clearTimeout(timer); finish(); }, 20);
+        } else if (reply.type === 'done' || reply.type === 'error') {
+          clearTimeout(timer);
+          finish();
+        }
+      };
+      events.connect.fire(port);
+      port.onMessage.fire(msg);
+    }),
   };
   return bg;
 }

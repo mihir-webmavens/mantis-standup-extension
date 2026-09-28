@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'popup.html', 'popup.js', 'popup.css', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -180,6 +180,28 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
       { ticket: '123', link: 'https://projects.webmavens.dev/tickets/123', priority: 'High' });
     await mantis.close();
   });
+
+  test('Settings → MantisAI: not set up yet; the installer carries this extension id and the helper', async () => {
+    const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    await popup.until(`document.querySelector('.ai-state').textContent !== 'Checking…'`);
+    const view = await popup.eval(`JSON.stringify({
+      state: document.querySelector('.ai-state').textContent,
+      current: document.querySelector('.ai-steps li.current')?.dataset.step,
+    })`).then(JSON.parse);
+    assert.deepEqual(view, { state: 'Not set up', current: 'allow' });
+
+    // Capture the download instead of saving it.
+    await popup.eval(`(() => { window.blobs = []; URL.createObjectURL = (b) => { window.blobs.push(b); return 'blob:test'; }; })()`);
+    await popup.eval(`document.querySelector('#ai-download').click()`);
+    await popup.until(`window.blobs.length === 1`);
+    const installer = await popup.eval(`window.blobs[0].text()`);
+    assert.ok(installer.startsWith('#!/usr/bin/env bash'));
+    assert.ok(installer.includes(`EXT_ID="\${1:-${ext.id}}"`));
+    const helper = fs.readFileSync(path.join(REPO, 'native-host/mantis-ai-host.mjs'), 'utf8');
+    assert.ok(installer.endsWith(`\n__MANTIS_AI_HOST__\n${helper}`));
+    await popup.close();
+  });
 });
 
 // The reminder's notifications permission is optional (Chrome asks when it is
@@ -228,6 +250,14 @@ describe('EOD reminder settings (notifications granted)', { skip: !chromium && '
     await popup.eval(`document.querySelector('#rem-enabled').click()`);
     await popup.until(`chrome.alarms.get('eod-reminder').then((a) => !a)`);
     assert.deepEqual(await state(), { on: false, stored: { enabled: false, time: '17:45', weekdaysOnly: false }, alarm: null });
+    await popup.close();
+  });
+
+  test('MantisAI with the permission but no helper installed says so', async () => {
+    const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`!['Checking…', 'Not set up'].includes(document.querySelector('.ai-state').textContent)`);
+    assert.deepEqual(await popup.eval(`JSON.stringify([document.querySelector('.ai-state').textContent, document.querySelector('.ai-steps li.current')?.dataset.step])`).then(JSON.parse),
+      ['Helper not installed', 'install']);
     await popup.close();
   });
 

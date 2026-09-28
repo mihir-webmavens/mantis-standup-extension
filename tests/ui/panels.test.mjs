@@ -15,7 +15,7 @@ let browser;
 const routes = {
   'https://projects.webmavens.dev/': ({ url }) => {
     const file = new URL(url).pathname.slice(1);
-    if (['content.js', 'button-styles.js'].includes(file)) {
+    if (['content.js', 'button-styles.js', 'mantis-ai.js'].includes(file)) {
       return { body: fs.readFileSync(new URL(file, ROOT)), headers: { 'Content-Type': 'text/javascript' } };
     }
     return { body: HARNESS };

@@ -510,7 +510,106 @@ function focusStandup() {
 document.querySelector('#tab-standup').addEventListener('click', () => (su.ticket.value ? su.action : su.ticket).focus());
 prefillFromTab();
 chrome.storage.session?.get('popupTab').then(({ popupTab }) => {
+  if (popupTab === 'mantis-ai') {
+    chrome.storage.session.remove('popupTab');
+    return showMantisAi();
+  }
   if (popupTab !== 'standup') return;
   chrome.storage.session.remove('popupTab');
   focusStandup();
 }, () => {});
+
+// ---------- MantisAI ----------
+// Setup for the chat on Mantis pages: the optional nativeMessaging permission,
+// the helper installer (native-host/install.sh with this extension's id and the
+// helper script appended) and a connection check through background.js.
+
+const ai = {
+  box: document.querySelector('#mantis-ai'),
+  state: document.querySelector('.ai-state'),
+  steps: Object.fromEntries([...document.querySelectorAll('.ai-steps li')].map((li) => [li.dataset.step, li])),
+  allow: document.querySelector('#ai-allow'),
+  download: document.querySelector('#ai-download'),
+  copy: document.querySelector('#ai-copy'),
+  cmd: document.querySelector('#ai-cmd'),
+  check: document.querySelector('#ai-check'),
+  error: document.querySelector('.ai-error'),
+  model: document.querySelector('#ai-model'),
+  reinstall: document.querySelector('#ai-reinstall'),
+};
+const AI_MODEL_KEY = 'mantisAiModel';
+const AI_INSTALLER = 'mantis-ai-install.sh';
+
+function renderAi({ status, claudeVersion, error }) {
+  const labels = { ready: 'Ready', disabled: 'Not set up', 'not-installed': 'Helper not installed', forbidden: 'Reinstall needed', error: 'Not working', checking: 'Checking…' };
+  const current = { disabled: 'allow', 'not-installed': 'install', forbidden: 'install', error: 'check' }[status];
+  const order = ['allow', 'install', 'check'];
+  for (const [name, li] of Object.entries(ai.steps)) {
+    li.classList.toggle('current', name === current);
+    li.classList.toggle('done', current != null && order.indexOf(name) < order.indexOf(current));
+  }
+  ai.box.classList.toggle('ready', status === 'ready');
+  ai.state.className = `ai-state${status === 'ready' ? ' ready' : status === 'checking' ? '' : ' todo'}`;
+  ai.state.textContent = status === 'ready' && claudeVersion ? `Ready · ${claudeVersion.replace(/\s*\(Claude Code\)/, '')}` : labels[status] || status;
+  ai.state.title = claudeVersion || '';
+  ai.error.hidden = !(error && status !== 'disabled');
+  ai.error.textContent = error || '';
+  ai.reinstall.hidden = status !== 'ready';
+}
+
+async function checkAi() {
+  renderAi({ status: 'checking' });
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'mantisAiStatus' });
+    renderAi(res?.ok ? res : { status: 'error', error: res?.error || 'Could not check MantisAI.' });
+  } catch (err) {
+    renderAi({ status: 'error', error: err.message });
+  }
+}
+
+// The installer is the repo's install.sh with this extension's id filled in and
+// the helper appended below its marker, so one file is all the user runs.
+async function downloadInstaller() {
+  try {
+    const [script, helper] = await Promise.all(['native-host/install.sh', 'native-host/mantis-ai-host.mjs']
+      .map((path) => fetch(chrome.runtime.getURL(path)).then((r) => r.text())));
+    const installer = `${script.replace('__EXTENSION_ID__', chrome.runtime.id).trimEnd()}\n__MANTIS_AI_HOST__\n${helper}`;
+    const url = URL.createObjectURL(new Blob([installer], { type: 'text/x-shellscript' }));
+    Object.assign(document.createElement('a'), { href: url, download: AI_INSTALLER }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showStatus('Installer downloaded · run the command below, then click Check');
+  } catch (err) {
+    showStatus(`Could not create the installer: ${err.message}`, true);
+  }
+}
+
+function showMantisAi() {
+  showTab(document.querySelector('#tab-settings'));
+  ai.box.scrollIntoView({ block: 'start' });
+}
+
+// Asked straight from the click, like notifications (Chrome requires a user gesture).
+ai.allow.addEventListener('click', () => {
+  chrome.permissions.request({ permissions: ['nativeMessaging'] }).catch(() => false).then((granted) => {
+    if (!granted) return showStatus('MantisAI needs this permission to reach the helper.', true);
+    checkAi();
+  });
+});
+ai.download.addEventListener('click', downloadInstaller);
+ai.reinstall.addEventListener('click', () => {
+  ai.box.classList.remove('ready');
+  for (const li of Object.values(ai.steps)) li.classList.remove('done', 'current');
+  ai.steps.install.classList.add('current');
+});
+ai.copy.addEventListener('click', () => {
+  navigator.clipboard.writeText(ai.cmd.textContent).then(() => showStatus('Command copied'), () => showStatus('Could not copy', true));
+});
+ai.check.addEventListener('click', checkAi);
+ai.model.addEventListener('change', () => {
+  chrome.storage.sync.set({ [AI_MODEL_KEY]: ai.model.value }).then(
+    () => showStatus(`MantisAI model: ${ai.model.selectedOptions[0].textContent}`),
+    (err) => showStatus(`Could not save: ${err.message}`, true),
+  );
+});
+chrome.storage.sync.get(AI_MODEL_KEY).then((v) => { ai.model.value = v[AI_MODEL_KEY] || ''; }, () => {});
+checkAi(); // without the permission this answers "Not set up" without starting the helper

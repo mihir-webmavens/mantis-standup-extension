@@ -241,3 +241,35 @@ footer { flex: none; height: 34px; display: flex; align-items: center; justify-c
 .dup-note { padding: 6px 8px; border-radius: 6px; font-size: 12px; background: var(--pending-bg); border: 1px solid var(--pending-border); color: var(--pending-text); }
 .su-status { padding: 6px 8px; border-radius: 6px; font-size: 12px; background: var(--filled-bg); color: var(--ok-text); word-break: break-word; }
 .su-status.err { background: var(--err-bg); color: var(--err-text); }
+
+/* MantisAI */
+.ai {
+  margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  box-shadow: var(--shadow);
+}
+.ai-state {
+  flex: none; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 18px;
+  background: var(--info-bg); color: var(--muted); border: 1px solid var(--border); white-space: nowrap;
+}
+.ai-state.ready { background: var(--filled-bg); color: var(--filled-text); border-color: var(--filled-border); }
+.ai-state.todo { background: var(--pending-bg); color: var(--pending-text); border-color: var(--pending-border); }
+.ai-steps { margin: 10px 0 0; padding: 10px 0 0 18px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.ai-steps li { color: var(--muted); }
+.ai-steps li span { margin-right: 6px; }
+.ai-steps li.current { color: var(--text); }
+.ai-steps li.done { opacity: .6; }
+.ai-steps li.done .pill { display: none; }
+.ai-steps li.done::marker { content: "✓  "; color: var(--ok-text); }
+.ai-cmd {
+  display: flex; align-items: center; gap: 8px; margin-top: 5px; padding: 5px 8px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.ai-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+.ai.ready .ai-steps { display: none; }
+.ai-error { margin: 8px 0 0; padding: 6px 8px; border-radius: 6px; font-size: 12px; background: var(--err-bg); color: var(--err-text); word-break: break-word; }
+.ai-error[hidden] { display: none; }
+.ai-opts { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ai-opts select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+.ai-opts select:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
+.ai-note { margin-top: 8px; }
+.ai-note code { font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; }

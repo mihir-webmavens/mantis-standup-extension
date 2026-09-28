@@ -123,6 +123,44 @@
         <p class="sub section-sub">How the Standup / EOD button looks on Mantis ticket pages.</p>
         <div class="grid" role="radiogroup" aria-labelledby="style-title"></div>
       </section>
+
+      <section class="ai" id="mantis-ai" aria-labelledby="ai-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="ai-title">MantisAI</h2>
+            <p class="sub">Chat about Mantis tickets with the Claude CLI on this computer.</p>
+          </div>
+          <span class="ai-state" role="status">Checking…</span>
+        </div>
+        <ol class="ai-steps">
+          <li data-step="allow">
+            <span>Allow the extension to talk to the local helper.</span>
+            <button type="button" class="pill" id="ai-allow">Allow</button>
+          </li>
+          <li data-step="install">
+            <span>Download the installer and run it in a terminal:</span>
+            <button type="button" class="pill" id="ai-download">Download</button>
+            <div class="ai-cmd"><code id="ai-cmd">bash ~/Downloads/mantis-ai-install.sh</code><button type="button" class="link" id="ai-copy">Copy</button></div>
+          </li>
+          <li data-step="check">
+            <span>Check the connection.</span>
+            <button type="button" class="pill" id="ai-check">Check</button>
+          </li>
+        </ol>
+        <p class="ai-error" role="alert" hidden></p>
+        <div class="ai-opts">
+          <label class="field">Model
+            <select id="ai-model">
+              <option value="">Claude CLI default</option>
+              <option value="sonnet">Sonnet (balanced)</option>
+              <option value="haiku">Haiku (fastest)</option>
+              <option value="opus">Opus (most capable)</option>
+            </select>
+          </label>
+          <button type="button" class="link" id="ai-reinstall" hidden>Reinstall helper</button>
+        </div>
+        <p class="sub ai-note">Needs Node.js 18+ and Claude Code, logged in (<code>claude</code>), with the Mantis connection <code>webmavens-projects</code> signed in (<code>/mcp</code>) for lookups. Changes in Mantis always ask for your approval. Linux and macOS.</p>
+      </section>
     </div>
   </div>
 

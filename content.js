@@ -390,6 +390,7 @@
 
   function openPanel() {
     closeEodPanel();
+    MantisAI.close();
     refreshMeta();
     renderDuplicateNotice();
     ui.panel.hidden = false;
@@ -426,6 +427,7 @@
 
   function openEodPanel() {
     closePanel();
+    MantisAI.close();
     ui.eodPanel.hidden = false;
     (eodEdit?.textarea ?? ui.eodPanel).focus(); // keyboard focus inside the panel, so Esc reaches it
     loadEods();
@@ -714,6 +716,14 @@
 
   sync();
   setInterval(sync, 1000);
+  // The MantisAI chat (mantis-ai.js) shares the page; only one panel is open at a time.
+  MantisAI.init({
+    getTicketInfo: () => ({ priority: currentTicket ? detectPriority() : null }),
+    onOpen: () => {
+      closePanel();
+      closeEodPanel();
+    },
+  });
   // Pick up EODs added or filled in from another tab.
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && host) loadEods();

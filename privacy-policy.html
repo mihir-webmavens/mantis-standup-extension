@@ -98,12 +98,13 @@
       Mantis Quick Standup · Chrome extension
     </div>
     <h1>Privacy Policy</h1>
-    <p class="meta">Effective 25 September 2026 · Applies to version 1.1.0 and later</p>
+    <p class="meta">Effective 28 September 2026 · Applies to version 1.7.0 and later</p>
   </header>
 
   <p class="summary">
     Mantis Quick Standup is an internal tool for the Webmavens team. It sends the standups and EOD updates you write
-    to <code>standup.webmavens.dev</code> and nowhere else. It does not track you, store your data, or share it with anyone.
+    to <code>standup.webmavens.dev</code>. If you set up the optional MantisAI chat, your messages and the ticket you are
+    viewing go to Claude through the Claude CLI installed on your own computer. It does not track you or share your data with anyone else.
   </p>
 
   <section>
@@ -161,13 +162,53 @@
   </section>
 
   <section>
+    <h2>MantisAI (optional)</h2>
+    <p>
+      MantisAI is a chat panel on <code>projects.webmavens.dev</code> pages. It only works after you set it up yourself from
+      the toolbar popup (Settings → MantisAI): you allow the optional native messaging permission and run an installer that
+      adds a small helper program to your computer. The helper runs your own Claude CLI (Claude Code), signed in with your
+      own Claude account; the extension has no AI service or API key of its own.
+    </p>
+    <p>When you send a message, the extension passes to the helper on your computer:</p>
+    <ul>
+      <li>the message you typed;</li>
+      <li>on a ticket page: the ticket number, address, title, priority and the page’s visible text (the ticket and its
+        comments, up to about 40,000 characters), unless you switch off “ticket content included” above the message box;</li>
+      <li>on other pages: only the page address and title (Claude can still look things up in Mantis, as below);</li>
+      <li>the Claude model you picked in Settings, if any.</li>
+    </ul>
+    <p>
+      The Claude CLI sends this to Anthropic to produce the answer, under your Claude account and Anthropic’s terms and
+      privacy policy, and keeps its own local history of the conversation (so it can be continued).
+    </p>
+    <p>
+      To answer questions about your work, Claude can look things up in Mantis through the Mantis connection
+      (<code>webmavens-projects</code>) that you have signed in to in your Claude CLI: for example who you are, tickets, their notes
+      and history, todos, project briefs and chat messages you can see. These lookups run as you, with your Mantis
+      permissions, and what they return becomes part of the conversation sent to Anthropic. The panel lists each lookup.
+    </p>
+    <p>
+      Claude can only change something in Mantis (for example post a note, change a ticket’s status or send a chat message)
+      after you click <strong>Approve</strong> on a card that shows exactly what will be done; if you click Deny, stop the
+      reply or do not answer, nothing is changed. Claude has no other tools: it cannot run commands or read your files.
+    </p>
+    <p>
+      Your MantisAI conversations (your messages and the answers, one conversation per ticket, up to the 40 most recent) are
+      saved in Chrome’s local extension storage on your computer so they are still there when you come back. <strong>New chat</strong>
+      deletes the conversation for that ticket.
+    </p>
+  </section>
+
+  <section>
     <h2>What it does not do</h2>
     <ul>
-      <li>It does not store your standups, EODs or any personal data. The only things it saves are your settings: the button
-        style you pick (a style name such as “neon”) and your reminder choices (on/off, time, weekdays only), kept in
-        Chrome’s extension storage and synced with your Chrome profile.</li>
+      <li>It does not store your standups or EODs. It saves your settings (the button style you pick, your reminder choices
+        and the MantisAI model), kept in Chrome’s extension storage and synced with your Chrome profile, and, if you use
+        MantisAI, your conversations, kept only in Chrome’s local storage on your computer.</li>
       <li>It does not use analytics, tracking or advertising.</li>
-      <li>It does not send data to any server other than <code>standup.webmavens.dev</code>.</li>
+      <li>The extension itself does not send data to any server other than <code>standup.webmavens.dev</code>. MantisAI
+        messages go to the helper on your computer, which passes them to Anthropic through your Claude CLI; Mantis lookups
+        go from your Claude CLI to <code>projects.webmavens.dev</code>.</li>
       <li>It does not run on any website other than <code>projects.webmavens.dev</code>.</li>
       <li>It does not sell or share data with third parties.</li>
     </ul>
@@ -181,6 +222,8 @@
       <li><strong>Storage:</strong> remembers the button style and reminder settings you choose from the extension’s toolbar icon.</li>
       <li><strong>Alarms:</strong> refreshes the pending-EOD count on the toolbar icon and schedules the reminders.</li>
       <li><strong>Notifications (optional):</strong> asked for only when you turn on a reminder; used to show the reminders.</li>
+      <li><strong>Native messaging (optional):</strong> asked for only when you set up MantisAI; lets the extension talk to the
+        MantisAI helper installed on your computer, and to nothing else.</li>
     </ul>
   </section>
 

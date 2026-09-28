@@ -12,8 +12,9 @@ over the DevTools protocol (`helpers/browser.mjs`).
 
 | Folder | What it covers | How |
 | --- | --- | --- |
-| `unit/` | Reading/saving the standup site's pages, badge, EOD reminder, shortcut routing | `background.js` runs in a Node `vm` with a fake `chrome` API and a fake standup server (`helpers/background.mjs`) |
-| `ui/` | Standup/EOD panels: Esc and focus, saving, Est Time, priority, duplicate notice, EOD-only pages | `content.js` on a stand-in Mantis page (`ui/harness.html`) with a fake background |
+| `unit/` | Reading/saving the standup site's pages, badge, EOD reminder, shortcut routing; MantisAI relay, system prompt and setup errors | `background.js` runs in a Node `vm` with a fake `chrome` API (ports and native messaging included) and a fake standup server (`helpers/background.mjs`) |
+| `unit/native-host.test.mjs` | The MantisAI helper: message framing, streaming, resume, locked-down CLI flags, errors, Stop | `native-host/mantis-ai-host.mjs` as a real process, with `fixtures/fake-claude.mjs` standing in for the Claude CLI |
+| `ui/` | Standup/EOD panels: Esc and focus, saving, Est Time, priority, duplicate notice, EOD-only pages; MantisAI panel: header button, streaming Markdown, Stop, errors, history | `content.js` and `mantis-ai.js` on a stand-in Mantis page (`ui/harness.html`) with a fake background and helper |
 | `extension/` | Toolbar popup (Add Standup, EOD tab, style picker, reminder, shortcuts list), shortcuts opening panels | The unpacked extension in Chromium; the service worker's requests are answered by the same fake standup server |
 
 `fixtures/edit-standups.html` is a sanitized copy of the real EOD page
