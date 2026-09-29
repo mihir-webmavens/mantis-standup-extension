@@ -504,7 +504,9 @@
   // Count and list are both drawn from eodState so they never disagree.
   function renderEods() {
     const { status, eods, error } = eodState;
-    const count = status === 'ready' ? `(${eods.length})` : status === 'loading' ? '(…)' : status === 'error' ? '(!)' : '';
+    // The button counts only EODs still to fill in (3 standups, 2 EODs added: "EOD (1)").
+    const pendingCount = eods.filter((e) => !e.update.trim()).length;
+    const count = status === 'ready' ? `(${pendingCount})` : status === 'loading' ? '(…)' : status === 'error' ? '(!)' : '';
     ui.eodFab.textContent = `EOD ${count}`.trim();
     ui.eodFab.title = status === 'error' ? error : '';
     ui.eodTitle.textContent = status === 'ready' ? `EOD (${eods.length})` : 'EOD';

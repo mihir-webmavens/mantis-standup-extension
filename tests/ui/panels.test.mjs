@@ -234,6 +234,18 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
     assert.equal(await notice('n=2&dup=2'), '2 standups already added today for #123. Adding again creates another entry.');
   });
 
+  test('EOD button counts only EODs still to fill in', async () => {
+    const button = async (query) => {
+      const page = await openMantis(`tickets/123?${query}`);
+      const text = await run(page, async () => { await T.wait(100); return T.root().querySelector('.fab-eod').textContent; });
+      await page.close();
+      return text;
+    };
+    assert.equal(await button('n=3'), 'EOD (2)'); // 3 standups, 1 EOD filled
+    assert.equal(await button('n=2&allfilled=1'), 'EOD (0)');
+    assert.equal(await button('n=2&err=1'), 'EOD (!)');
+  });
+
   test('EOD header shows pending count or "All done"', async () => {
     const chip = async (query) => {
       const page = await openMantis(`tickets/123?${query}`);
