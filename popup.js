@@ -442,7 +442,8 @@ const play = {
   enabled: document.querySelector('#play-enabled'),
   release: document.querySelector('#play-release'),
   note: document.querySelector('.play-note'),
-  secrets: { konami: 'Konami code', shake: 'Shake it off', bugs: 'The magic word' },
+  secrets: MantisPlayEvents.SECRETS,
+  events: MantisPlayEvents.LIST,
   look: MantisThemes.DEFAULT,
   shown: null,
 };
@@ -456,11 +457,13 @@ function renderPlay() {
 
 function renderPlayStats(stats = {}) {
   const found = stats.secrets || [];
+  const seen = (stats.seen || []).filter((id) => id in play.events);
   const values = {
     'ps-squashed': String(stats.squashed || 0),
     'ps-fastest': stats.fastest == null ? '–' : `${(stats.fastest / 1000).toFixed(1)} s`,
     'ps-combo': String(stats.combo || 0),
     'ps-secrets': `${found.length}/${Object.keys(play.secrets).length}`,
+    'ps-events': `${seen.length}/${Object.keys(play.events).length}`,
   };
   for (const [id, value] of Object.entries(values)) {
     const el = document.getElementById(id);
@@ -473,8 +476,11 @@ function renderPlayStats(stats = {}) {
     }
   }
   play.shown = stats;
+  // Only what has been found is named: secrets show as ???, and events not yet seen don't show at all.
   document.querySelector('.play-secrets').replaceChildren(...Object.entries(play.secrets).map(([id, name]) =>
     Object.assign(document.createElement('li'), { className: found.includes(id) ? 'found' : '', textContent: found.includes(id) ? `✨ ${name}` : '???' })));
+  document.querySelector('.play-seen').replaceChildren(...seen.map((id) =>
+    Object.assign(document.createElement('li'), { className: 'found', textContent: `🔭 ${play.events[id][1]}` })));
 }
 
 play.enabled.addEventListener('change', () => {

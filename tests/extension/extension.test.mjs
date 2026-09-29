@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'themes.js', 'mantis-theme.js', 'playground.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'preview.html', 'preview.css', 'preview.js', 'themes.html', 'themes.css', 'themes-gallery.js', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'themes.js', 'mantis-theme.js', 'playground-events.js', 'playground.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'preview.html', 'preview.css', 'preview.js', 'themes.html', 'themes.css', 'themes-gallery.js', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -297,7 +297,7 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
     await popup.click(`document.querySelector('#tab-settings')`);
     await popup.until(`document.getElementById('ps-squashed').textContent === '1'`);
-    assert.equal(await popup.eval(`document.getElementById('ps-secrets').textContent`), '2/3');
+    assert.equal(await popup.eval(`document.getElementById('ps-secrets').textContent`), '2/12');
     assert.equal(await popup.eval(`document.querySelectorAll('.play-secrets li.found').length`), 2);
     assert.equal(await popup.eval(`document.getElementById('play-release').disabled`), false);
 
@@ -305,6 +305,62 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     await mantis.until(`!document.querySelector('mantis-playground')`, { message: 'switching the playground off did not remove it' });
     assert.equal(await popup.eval(`document.getElementById('play-release').disabled`), true);
     await popup.eval(`chrome.storage.sync.set({ playground: true, mantisTheme: 'classic' }).then(() => chrome.storage.local.remove('playStats'))`);
+    await popup.close();
+    await mantis.close();
+  });
+
+  test('Kinetic playground random events: mantis, UFO, golden bug, secrets, discoveries in Settings', async () => {
+    let popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.eval(`chrome.storage.sync.set({ mantisTheme: 'kinetic' }).then(() => chrome.storage.local.remove('playStats'))`);
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets', { routes: lookRoutes });
+    await mantis.until(`document.querySelector('mantis-playground')`, { message: 'playground did not start with Kinetic' });
+    const shadow = `document.querySelector('mantis-playground').shadowRoot`;
+    const play = (what) => mantis.eval(`document.dispatchEvent(new CustomEvent('msq-play', { detail: '${what}' }))`);
+    const poke = (sel) => mantis.eval(`${shadow}.querySelector('${sel}').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }))`);
+    const has = (key, id) => popup.until(`chrome.storage.local.get('playStats').then((v) => v.playStats?.${key}?.includes('${id}'))`, { message: `${key}: ${id}` });
+
+    // A mantis walks by; saying hi is a secret with the "You found a secret!" card, and the event is discovered.
+    await play('wave');
+    await mantis.until(`${shadow}.querySelector('.mantis')`);
+    await poke('.mantis');
+    await mantis.until(`${shadow}.querySelector('.found')?.textContent.includes('You found a secret!')`);
+    await has('secrets', 'walker');
+    await has('seen', 'wave');
+
+    // The UFO beams up a bug that is out; clicking it is a secret.
+    await play('swarm');
+    await mantis.until(`${shadow}.querySelectorAll('.bug').length >= 1`);
+    await play('ufo');
+    await mantis.until(`${shadow}.querySelector('.ufo.beaming')`, { timeout: 15000, message: 'UFO did not beam' });
+    await poke('.ufo');
+    await has('secrets', 'ufo');
+
+    // A golden bug is a secret when squashed; the ??? thing says you weren't supposed to find it.
+    await play('golden');
+    await mantis.until(`${shadow}.querySelector('.bug.gold')`);
+    await poke('.bug.gold');
+    await has('secrets', 'golden');
+    await play('mystery');
+    await mantis.until(`${shadow}.querySelector('.thing.q')`);
+    await poke('.thing.q');
+    await mantis.until(`${shadow}.querySelector('.found')?.textContent.includes("You weren't supposed to find this.")`);
+    await has('secrets', 'mystery');
+
+    // Every event plays without breaking (each one counts as discovered once it has run).
+    const ids = await popup.eval(`Object.keys(MantisPlayEvents.LIST)`);
+    for (const id of ids) await play(id);
+    await popup.until(`chrome.storage.local.get('playStats').then((v) => v.playStats?.seen?.length === ${ids.length})`, { message: 'not every event ran' });
+    assert.ok(await mantis.eval(`${shadow}.querySelectorAll('.c').length > 20`), 'confetti from the celebration');
+
+    await popup.close();
+    popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    await popup.until(`document.getElementById('ps-events').textContent === '${ids.length}/${ids.length}'`);
+    assert.equal(await popup.eval(`document.getElementById('ps-secrets').textContent`), '4/12');
+    assert.equal(await popup.eval(`document.querySelectorAll('.play-seen li').length`), ids.length);
+
+    await popup.eval(`chrome.storage.sync.set({ mantisTheme: 'classic' }).then(() => chrome.storage.local.remove('playStats'))`);
+    await mantis.until(`!document.querySelector('mantis-playground')`);
     await popup.close();
     await mantis.close();
   });

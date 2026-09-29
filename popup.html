@@ -87,7 +87,7 @@
         <div class="rem-head">
           <div>
             <h2 id="play-title">Kinetic playground <span class="play-tag">🐞 Fun</span></h2>
-            <p class="sub">With the Kinetic look, a bug scuttles across Mantis now and then: click it to squash it. Clicks on empty space throw sparks, and 3 secrets are hidden. It never blocks your work.</p>
+            <p class="sub">With the Kinetic look, a bug scuttles across Mantis now and then: click it to squash it. Clicks on empty space throw sparks, and once in a while something unexpected happens. Some events are rare, a few are legendary. It never blocks your work.</p>
           </div>
           <label class="switch" title="Turn the playground on or off">
             <input type="checkbox" id="play-enabled" role="switch" aria-labelledby="play-title" checked>
@@ -98,9 +98,11 @@
           <div><b id="ps-squashed">0</b><span>squashed</span></div>
           <div><b id="ps-fastest">–</b><span>fastest</span></div>
           <div><b id="ps-combo">0</b><span>best combo</span></div>
-          <div><b id="ps-secrets">0/3</b><span>secrets</span></div>
+          <div><b id="ps-secrets">0</b><span>secrets</span></div>
+          <div><b id="ps-events">0</b><span>events</span></div>
         </div>
-        <ul class="play-secrets" aria-label="Secrets"></ul>
+        <ul class="play-secrets" aria-label="Secrets found"></ul>
+        <ul class="play-secrets play-seen" aria-label="Events discovered"></ul>
         <div class="ae-actions">
           <button type="button" class="pill" id="play-release">Release bugs</button>
           <span class="sub play-note" role="status"></span>
@@ -249,6 +251,7 @@
   <script src="button-styles.js"></script>
   <script src="themes.js"></script>
   <script src="header-layout.js"></script>
+  <script src="playground-events.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

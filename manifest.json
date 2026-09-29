@@ -38,7 +38,7 @@
     },
     {
       "matches": ["https://projects.webmavens.dev/*"],
-      "js": ["button-styles.js", "content.js", "playground.js"],
+      "js": ["button-styles.js", "content.js", "playground-events.js", "playground.js"],
       "run_at": "document_idle"
     }
   ]

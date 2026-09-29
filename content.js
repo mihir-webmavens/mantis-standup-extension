@@ -617,6 +617,7 @@
       eodState = { status: 'ready', eods: res.eods, error: null };
       eodEdit = null;
       eodSavedId = edit.id;
+      document.dispatchEvent(new CustomEvent('msq-done', { detail: 'eod' })); // playground.js may celebrate
       setTimeout(() => {
         if (eodSavedId !== edit.id) return;
         eodSavedId = null;
@@ -663,6 +664,7 @@
         priorityTouched = false;
         refreshMeta(); // back to the ticket's own priority for the next standup
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
+        document.dispatchEvent(new CustomEvent('msq-done', { detail: 'standup' })); // playground.js may celebrate
         loadEods(); // the new standup is also a new EOD entry
       } else {
         showStatus('err', res?.error || 'Unknown error; standup may not have been saved.');

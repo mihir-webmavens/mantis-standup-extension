@@ -390,7 +390,7 @@ html[data-look="neon"] { --grad: linear-gradient(120deg, #0891b2, #c026d3); --ac
   background: linear-gradient(110deg, #ff4d6d, #ff9f1c, #2ec4b6, #8b5cf6, #ff4d6d) 0 0 / 300% 100%; animation: look-flow 5s linear infinite;
 }
 .play-tag { margin-left: 4px; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--info-bg); vertical-align: 1px; }
-.play-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.play-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .play-stats div {
   display: grid; justify-items: center; padding: 7px 4px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border);
   transition: opacity .2s ease;
@@ -402,5 +402,7 @@ html[data-look="neon"] { --grad: linear-gradient(120deg, #0891b2, #c026d3); --ac
 .play-secrets { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
 .play-secrets li { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px dashed var(--border); }
 .play-secrets li.found { color: #fff; border: 0; background: linear-gradient(110deg, #ff4d6d, #ff9f1c); }
+.play-seen li.found { background: linear-gradient(110deg, #8b5cf6, #2ec4b6); }
+.play-secrets:empty { display: none; }
 .play:not(.on) :is(.play-stats, .play-secrets) { opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .play::before, .play-stats b.bump { animation: none; } }
