@@ -423,6 +423,13 @@
   let konami = 0;
   let typed = '';
 
+  // Ctrl+Shift+M: a random event right away (not listed anywhere on purpose).
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyM' || !e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !active()) return;
+    e.preventDefault();
+    if (!e.repeat) events.run(events.pick());
+  }, { capture: true });
+
   document.addEventListener('keydown', (e) => {
     const target = e.composedPath()[0];
     if (editable(target)) {

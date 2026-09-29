@@ -346,6 +346,15 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     await mantis.until(`${shadow}.querySelector('.found')?.textContent.includes("You weren't supposed to find this.")`);
     await has('secrets', 'mystery');
 
+    // Ctrl+Shift+M plays a random event at once (and is kept from the browser); other combos are left alone.
+    const key = (mods) => mantis.eval(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'M', code: 'KeyM', ${mods}, bubbles: true, cancelable: true }))`);
+    const shown = () => mantis.eval(`${shadow}.children.length + document.body.getAnimations().length`);
+    const before = await shown();
+    assert.equal(await key('ctrlKey: true, shiftKey: true'), false);
+    assert.ok(await shown() > before, 'Ctrl+Shift+M did not start an event');
+    assert.equal(await key('ctrlKey: true'), true);
+    assert.equal(await key('shiftKey: true, altKey: true'), true);
+
     // Every event plays without breaking (each one counts as discovered once it has run).
     const ids = await popup.eval(`Object.keys(MantisPlayEvents.LIST)`);
     for (const id of ids) await play(id);
