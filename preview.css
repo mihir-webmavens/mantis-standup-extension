@@ -1,0 +1,128 @@
+/* The stand-in Mantis page for look previews. Like Mantis (Tailwind v4 + Flux),
+   every colour, radius, gap and font comes from the tokens in @layer theme and
+   the styles sit in @layer utilities, so the unlayered look stylesheet from
+   themes.js overrides them exactly as it does on the real site. */
+
+@layer theme {
+  :root {
+    --color-white: #fff;
+    --color-zinc-50: #fafafa; --color-zinc-100: #f4f4f5; --color-zinc-200: #e4e4e7; --color-zinc-300: #d4d4d8;
+    --color-zinc-400: #a1a1aa; --color-zinc-500: #71717a; --color-zinc-600: #52525b; --color-zinc-700: #3f3f46;
+    --color-zinc-800: #27272a; --color-zinc-900: #18181b; --color-zinc-950: #09090b;
+    --color-accent: var(--color-zinc-800); --color-accent-content: var(--color-zinc-800); --color-accent-foreground: #fff;
+    --radius-sm: .25rem; --radius-md: .375rem; --radius-lg: .5rem; --radius-xl: .75rem; --radius-2xl: 1rem;
+    --spacing: .25rem;
+    --font-sans: ui-sans-serif, system-ui, sans-serif;
+  }
+  .dark { --color-accent: #fff; --color-accent-content: #fff; --color-accent-foreground: var(--color-zinc-800); }
+}
+
+@layer utilities {
+  * { box-sizing: border-box; }
+  html { font-family: var(--font-sans); color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; font-size: 14px; line-height: 1.45; background: var(--color-white); color: var(--color-zinc-800); overflow: hidden; }
+  .dark body { background: var(--color-zinc-800); color: var(--color-zinc-100); }
+  .scrollable body { overflow: visible; }
+  .scrollable .hdr { position: sticky; top: 0; z-index: 10; }
+  .muted { color: var(--color-zinc-500); }
+  .dark .muted { color: var(--color-zinc-400); }
+
+  .hdr {
+    display: flex; align-items: center; gap: calc(var(--spacing) * 4); height: calc(var(--spacing) * 14);
+    padding: 0 calc(var(--spacing) * 5); background: var(--color-white); border-bottom: 1px solid var(--color-zinc-200);
+  }
+  .dark .hdr { background: var(--color-zinc-900); border-color: var(--color-zinc-700); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: inherit; text-decoration: none; }
+  .logo {
+    display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--radius-md);
+    background: var(--color-accent); color: var(--color-accent-foreground); font-size: 13px;
+  }
+  .nav { display: flex; gap: calc(var(--spacing) * 1); }
+  .nav-item {
+    position: relative; display: flex; align-items: center; gap: 6px; padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 3);
+    border-radius: var(--radius-lg); color: var(--color-zinc-500); text-decoration: none; font-weight: 500; white-space: nowrap;
+  }
+  .dark .nav-item { color: var(--color-zinc-400); }
+  .nav-item:hover { background: var(--color-zinc-100); color: var(--color-zinc-800); }
+  .dark .nav-item:hover { background: var(--color-zinc-800); color: #fff; }
+  .nav-item[data-current] { color: var(--color-zinc-800); }
+  .dark .nav-item[data-current] { color: #fff; }
+  .nav-item[data-current]::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: calc(var(--spacing) * -3); height: 2px; background: var(--color-zinc-800);
+  }
+  .dark .nav-item[data-current]::after { background: #fff; }
+  .count { padding: 0 6px; border-radius: 999px; font-size: 11px; line-height: 16px; background: var(--color-zinc-200); color: var(--color-zinc-700); }
+  .dark .count { background: var(--color-zinc-700); color: var(--color-zinc-200); }
+  .spacer { flex: 1; }
+  .search { position: relative; width: 220px; }
+  .search input { width: 100%; }
+  .search kbd {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font: 11px var(--font-sans);
+    color: var(--color-zinc-400);
+  }
+  input[data-flux-control], textarea[data-flux-control] {
+    display: block; width: 100%; padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3); font: inherit; font-size: 13px;
+    color: inherit; background: var(--color-white); border: 1px solid var(--color-zinc-200); border-radius: var(--radius-lg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .04); resize: none;
+  }
+  .dark :is(input, textarea)[data-flux-control] { background: rgb(255 255 255 / .1); border-color: rgb(255 255 255 / .1); }
+  .avatar {
+    display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: var(--radius-lg);
+    background: var(--color-zinc-200); color: var(--color-zinc-700); font-size: 12px; font-weight: 600;
+  }
+  .dark .avatar { background: var(--color-zinc-700); color: var(--color-zinc-200); }
+  .avatar.sm { width: 24px; height: 24px; font-size: 10px; }
+
+  .main { padding: calc(var(--spacing) * 7) calc(var(--spacing) * 6); display: grid; gap: calc(var(--spacing) * 5); }
+  .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+  h1 { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.2; }
+  h1 + p { margin: 4px 0 0; font-size: 13px; }
+  h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .actions, .note-actions { display: flex; gap: calc(var(--spacing) * 2); }
+  .btn {
+    display: inline-flex; align-items: center; height: calc(var(--spacing) * 9); padding: 0 calc(var(--spacing) * 4);
+    font: inherit; font-size: 13px; font-weight: 500; color: var(--color-zinc-800); cursor: pointer;
+    background: var(--color-white); border: 1px solid var(--color-zinc-200); border-radius: var(--radius-lg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .05);
+  }
+  .dark .btn { background: var(--color-zinc-700); border-color: var(--color-zinc-600); color: #fff; }
+  .btn-primary { background: var(--color-accent); color: var(--color-accent-foreground); border-color: rgb(0 0 0 / .1); }
+  .dark .btn-primary { background: var(--color-accent); color: var(--color-accent-foreground); border-color: transparent; }
+  .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+
+  .card { background: var(--color-white); border: 1px solid var(--color-zinc-200); border-radius: var(--radius-xl); }
+  .dark .card { background: rgb(255 255 255 / .05); border-color: rgb(255 255 255 / .1); }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--spacing) * 4); }
+  .stat { display: grid; gap: 2px; padding: calc(var(--spacing) * 4); position: relative; overflow: hidden; }
+  .stat .muted { font-size: 12px; }
+  .stat strong { font-size: 26px; line-height: 1.1; font-weight: 650; }
+  .bars { position: absolute; right: 14px; bottom: 14px; display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+  .bars i { width: 5px; height: var(--h); border-radius: 2px; background: var(--color-accent); opacity: .5; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: calc(var(--spacing) * 4); align-items: start; }
+
+  .table-card { overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; font-size: 12px; color: var(--color-zinc-500); }
+  th, td { padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 4); border-bottom: 1px solid var(--color-zinc-100); white-space: nowrap; }
+  td:nth-child(2) { white-space: normal; }
+  .dark :is(th, td) { border-color: rgb(255 255 255 / .06); }
+  tbody tr:last-child td { border-bottom: 0; }
+  .id { font-weight: 600; color: var(--color-accent-content); }
+  .badge {
+    display: inline-flex; padding: 1px calc(var(--spacing) * 2); border-radius: var(--radius-md); font-size: 11.5px; font-weight: 500;
+  }
+  .badge.blue { background: rgb(59 130 246 / .14); color: #1d4ed8; }
+  .badge.amber { background: rgb(245 158 11 / .16); color: #b45309; }
+  .badge.red { background: rgb(239 68 68 / .14); color: #b91c1c; }
+  .badge.green { background: rgb(34 197 94 / .15); color: #15803d; }
+  .badge.zinc { background: var(--color-zinc-100); color: var(--color-zinc-600); }
+  .dark .badge.blue { color: #93c5fd; } .dark .badge.amber { color: #fcd34d; }
+  .dark .badge.red { color: #fca5a5; } .dark .badge.green { color: #86efac; }
+  .dark .badge.zinc { background: rgb(255 255 255 / .08); color: var(--color-zinc-300); }
+
+  .activity { display: grid; gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 4); }
+  .activity ul { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--spacing) * 3); font-size: 12.5px; }
+  .activity li { display: flex; align-items: center; gap: 8px; }
+  .note-actions { justify-content: flex-end; }
+}

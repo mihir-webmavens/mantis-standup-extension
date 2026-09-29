@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mantis looks</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="themes.css">
+</head>
+<body>
+  <aside class="rail">
+    <div class="brand">
+      <img src="icons/icon48.png" alt="" width="34" height="34">
+      <div>
+        <h1>Mantis looks</h1>
+        <p>Pick how Mantis looks in this browser.</p>
+      </div>
+    </div>
+    <div class="list" role="radiogroup" aria-label="Looks">
+      <span class="glider" aria-hidden="true"></span>
+    </div>
+    <p class="rail-note">Your choice syncs with Chrome and stays after restarts. Open Mantis tabs switch instantly. Change it any time here or in the toolbar popup → Settings.</p>
+  </aside>
+
+  <main class="stage-wrap">
+    <div class="top">
+      <div class="title">
+        <h2 id="look-name"></h2>
+        <p id="look-desc"></p>
+        <ul class="traits" id="look-traits"></ul>
+      </div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Mantis appearance">
+          <button type="button" id="mode-light" aria-pressed="true">Light</button>
+          <button type="button" id="mode-dark" aria-pressed="false">Dark</button>
+        </div>
+        <button type="button" class="ghost" id="replay" title="Play the entrance animation again">↻ Replay</button>
+        <button type="button" class="use" id="use">Use this look</button>
+      </div>
+    </div>
+
+    <div class="browser">
+      <div class="chrome" aria-hidden="true">
+        <span class="dots"><i></i><i></i><i></i></span>
+        <span class="url">projects.webmavens.dev/tickets</span>
+      </div>
+      <div class="viewport">
+        <iframe id="frame" title="Look preview" tabindex="-1"></iframe>
+      </div>
+    </div>
+    <p class="hint">Hover, click and scroll inside the preview to try the motion; ↑ ↓ switch looks, Enter uses one.</p>
+  </main>
+
+  <div class="toast" role="status" aria-live="polite"></div>
+
+  <script src="themes.js"></script>
+  <script src="themes-gallery.js"></script>
+</body>
+</html>

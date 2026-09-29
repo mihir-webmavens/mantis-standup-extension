@@ -33,12 +33,12 @@
     {
       "matches": ["https://projects.webmavens.dev/*"],
       "css": ["mantis-header.css"],
-      "js": ["header-layout.js", "mantis-header.js", "mantis-ai.js"],
+      "js": ["header-layout.js", "mantis-header.js", "themes.js", "mantis-theme.js", "mantis-ai.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["https://projects.webmavens.dev/*"],
-      "js": ["button-styles.js", "content.js"],
+      "js": ["button-styles.js", "content.js", "playground.js"],
       "run_at": "document_idle"
     }
   ]

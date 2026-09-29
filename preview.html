@@ -1,0 +1,89 @@
+<!doctype html>
+<!-- A stand-in Mantis page (Flux markup, Tailwind-style tokens) that the look
+     previews render with the real theme stylesheet from themes.js.
+     ?theme=<id>  the look      ?dark=1  Mantis in dark mode      ?scroll=1  the page scrolls -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mantis look preview</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <div id="app">
+    <header data-flux-header class="hdr">
+      <a class="brand" href="#" tabindex="-1"><span class="logo">M</span>Mantis</a>
+      <nav data-flux-navbar class="nav">
+        <a data-flux-navbar-items class="nav-item" href="#" tabindex="-1">Dashboard</a>
+        <a data-flux-navbar-items class="nav-item" href="#" tabindex="-1" data-current>Tickets</a>
+        <a data-flux-navbar-items class="nav-item" href="#" tabindex="-1">My Work</a>
+        <a data-flux-navbar-items class="nav-item" href="#" tabindex="-1">Chat</a>
+        <a data-flux-navbar-items class="nav-item" href="#" tabindex="-1">Notifications <span class="count">3</span></a>
+      </nav>
+      <div class="spacer"></div>
+      <div data-flux-input class="search"><input data-flux-control type="text" placeholder="Search tickets…" tabindex="-1"><kbd>⌘K</kbd></div>
+      <span data-flux-avatar class="avatar">MS</span>
+    </header>
+
+    <main data-flux-main class="main">
+      <div class="page-head">
+        <div>
+          <h1>Tickets</h1>
+          <p class="muted">24 open across 6 projects · synced just now</p>
+        </div>
+        <div class="actions">
+          <button data-flux-button type="button" class="btn" tabindex="-1">Filter</button>
+          <button data-flux-button data-variant="primary" type="button" class="btn btn-primary" tabindex="-1">+ New ticket</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div data-flux-card class="card stat"><span class="muted">Open</span><strong>24</strong><span class="bars"><i style="--h:40%"></i><i style="--h:65%"></i><i style="--h:50%"></i><i style="--h:80%"></i><i style="--h:70%"></i><i style="--h:95%"></i></span></div>
+        <div data-flux-card class="card stat"><span class="muted">In progress</span><strong>8</strong><span class="bars"><i style="--h:30%"></i><i style="--h:45%"></i><i style="--h:60%"></i><i style="--h:40%"></i><i style="--h:70%"></i><i style="--h:55%"></i></span></div>
+        <div data-flux-card class="card stat"><span class="muted">Needs testing</span><strong>5</strong><span class="bars"><i style="--h:60%"></i><i style="--h:35%"></i><i style="--h:50%"></i><i style="--h:25%"></i><i style="--h:45%"></i><i style="--h:30%"></i></span></div>
+        <div data-flux-card class="card stat"><span class="muted">Closed this week</span><strong>31</strong><span class="bars"><i style="--h:50%"></i><i style="--h:60%"></i><i style="--h:75%"></i><i style="--h:70%"></i><i style="--h:90%"></i><i style="--h:100%"></i></span></div>
+      </div>
+
+      <div class="split">
+        <div data-flux-card class="card table-card">
+          <table data-flux-table>
+            <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Updated</th></tr></thead>
+            <tbody>
+              <tr><td class="id">8727</td><td>Login page loops after the session times out</td><td><span data-flux-badge class="badge blue">In progress</span></td><td><span data-flux-badge class="badge red">High</span></td><td class="muted">2m</td></tr>
+              <tr><td class="id">8719</td><td>Invoice export drops the last row</td><td><span data-flux-badge class="badge amber">Needs testing</span></td><td><span data-flux-badge class="badge amber">Medium</span></td><td class="muted">18m</td></tr>
+              <tr><td class="id">8712</td><td>Notification bell counts read items</td><td><span data-flux-badge class="badge zinc">Open</span></td><td><span data-flux-badge class="badge zinc">Low</span></td><td class="muted">1h</td></tr>
+              <tr><td class="id">8706</td><td>Add CSV import for time entries</td><td><span data-flux-badge class="badge blue">In progress</span></td><td><span data-flux-badge class="badge amber">Medium</span></td><td class="muted">3h</td></tr>
+              <tr><td class="id">8698</td><td>Chat thread loses scroll position</td><td><span data-flux-badge class="badge green">Testing done</span></td><td><span data-flux-badge class="badge zinc">Low</span></td><td class="muted">5h</td></tr>
+              <tr><td class="id">8690</td><td>Brief page: decisions log ordering</td><td><span data-flux-badge class="badge zinc">Open</span></td><td><span data-flux-badge class="badge red">High</span></td><td class="muted">1d</td></tr>
+              <tr><td class="id">8684</td><td>Time entries rounding on weekly report</td><td><span data-flux-badge class="badge amber">Needs testing</span></td><td><span data-flux-badge class="badge zinc">Low</span></td><td class="muted">2d</td></tr>
+              <tr><td class="id">8679</td><td>GitHub webhook retries flood the log</td><td><span data-flux-badge class="badge blue">In progress</span></td><td><span data-flux-badge class="badge red">High</span></td><td class="muted">2d</td></tr>
+              <tr><td class="id">8671</td><td>Project brief: add stakeholders section</td><td><span data-flux-badge class="badge zinc">Open</span></td><td><span data-flux-badge class="badge amber">Medium</span></td><td class="muted">3d</td></tr>
+              <tr><td class="id">8665</td><td>Todos list loses filter after reload</td><td><span data-flux-badge class="badge green">Testing done</span></td><td><span data-flux-badge class="badge zinc">Low</span></td><td class="muted">3d</td></tr>
+              <tr><td class="id">8660</td><td>Label colours unreadable in dark mode</td><td><span data-flux-badge class="badge blue">In progress</span></td><td><span data-flux-badge class="badge amber">Medium</span></td><td class="muted">4d</td></tr>
+              <tr><td class="id">8652</td><td>Attachment upload stalls above 20 MB</td><td><span data-flux-badge class="badge zinc">Open</span></td><td><span data-flux-badge class="badge red">High</span></td><td class="muted">5d</td></tr>
+              <tr><td class="id">8647</td><td>Mentions don't notify guests</td><td><span data-flux-badge class="badge amber">Needs testing</span></td><td><span data-flux-badge class="badge amber">Medium</span></td><td class="muted">6d</td></tr>
+              <tr><td class="id">8641</td><td>Export tickets to CSV with custom fields</td><td><span data-flux-badge class="badge green">Testing done</span></td><td><span data-flux-badge class="badge zinc">Low</span></td><td class="muted">1w</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div data-flux-card class="card activity">
+          <h2 data-flux-heading>Activity</h2>
+          <ul>
+            <li><span class="avatar sm">AK</span><span><b>Asha</b> moved <b>#8719</b> to Needs testing</span></li>
+            <li><span class="avatar sm">RJ</span><span><b>Rohan</b> commented on <b>#8727</b></span></li>
+            <li><span class="avatar sm">MS</span><span><b>You</b> added a standup for <b>#8706</b></span></li>
+          </ul>
+          <textarea data-flux-control rows="2" placeholder="Write a note…" tabindex="-1"></textarea>
+          <div class="note-actions">
+            <button data-flux-button type="button" class="btn ghost" tabindex="-1">Cancel</button>
+            <button data-flux-button data-variant="primary" type="button" class="btn btn-primary" tabindex="-1">Post note</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="themes.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

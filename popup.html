@@ -72,6 +72,41 @@
     </div>
 
     <div class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <section class="looks-section" aria-labelledby="look-title">
+        <div class="keys-head">
+          <div>
+            <h2 id="look-title">Mantis look</h2>
+            <p class="sub">Restyles Mantis in this browser: colours, layout, motion. Mantis itself is unchanged.</p>
+          </div>
+          <button type="button" class="link" id="look-gallery" title="Open every look full size">Preview all ↗</button>
+        </div>
+        <div class="looks" role="radiogroup" aria-labelledby="look-title"></div>
+      </section>
+
+      <section class="reminder play" id="play" aria-labelledby="play-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="play-title">Kinetic playground <span class="play-tag">🐞 Fun</span></h2>
+            <p class="sub">With the Kinetic look, a bug scuttles across Mantis now and then: click it to squash it. Clicks on empty space throw sparks, and 3 secrets are hidden. It never blocks your work.</p>
+          </div>
+          <label class="switch" title="Turn the playground on or off">
+            <input type="checkbox" id="play-enabled" role="switch" aria-labelledby="play-title" checked>
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="play-stats">
+          <div><b id="ps-squashed">0</b><span>squashed</span></div>
+          <div><b id="ps-fastest">–</b><span>fastest</span></div>
+          <div><b id="ps-combo">0</b><span>best combo</span></div>
+          <div><b id="ps-secrets">0/3</b><span>secrets</span></div>
+        </div>
+        <ul class="play-secrets" aria-label="Secrets"></ul>
+        <div class="ae-actions">
+          <button type="button" class="pill" id="play-release">Release bugs</button>
+          <span class="sub play-note" role="status"></span>
+        </div>
+      </section>
+
       <section class="reminder" data-reminder="standup" aria-labelledby="sr-title">
         <div class="rem-head">
           <div>
@@ -212,6 +247,7 @@
   </footer>
 
   <script src="button-styles.js"></script>
+  <script src="themes.js"></script>
   <script src="header-layout.js"></script>
   <script src="popup.js"></script>
 </body>

@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'themes.js', 'mantis-theme.js', 'playground.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'preview.html', 'preview.css', 'preview.js', 'themes.html', 'themes.css', 'themes-gallery.js', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -68,6 +68,13 @@ const HEADER_PAGE = `<!doctype html><html><head><meta charset="utf-8">
 const headerRoutes = { 'https://projects.webmavens.dev/': () => ({ body: HEADER_PAGE }) };
 
 const mantisRoutes = { 'https://projects.webmavens.dev/': () => ({ body: MANTIS_PAGE }) };
+
+// A Mantis page that records the look on <html> when the first frame is drawn.
+const LOOK_PAGE = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+      <script>requestAnimationFrame(() => { window.firstTheme = document.documentElement.dataset.msqTheme ?? null; });</script>
+      <main><h1>Tickets</h1></main></body></html>`;
+const lookRoutes = { 'https://projects.webmavens.dev/': () => ({ body: LOOK_PAGE }) };
+const LOOK_IDS = ['classic', 'kinetic', 'aurora', 'graphite', 'paper', 'pop', 'neon'];
 
 describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chromium found (set CHROMIUM_PATH)' }, () => {
   let ext, server;
@@ -179,6 +186,127 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     const rows = await popup.eval(`[...document.querySelectorAll('.keys li')].map((li) => [li.querySelector('.what').textContent, [...li.querySelectorAll('kbd')].map((k) => k.textContent).join('+')])`);
     assert.deepEqual(rows, [['Add Standup (Planned Action)', 'Ctrl+Shift+S'], ['EOD list', 'Ctrl+Shift+E']]);
     await popup.close();
+  });
+
+  test('Settings → Mantis look: live previews, restyles open Mantis tabs and is kept', async () => {
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets', { routes: lookRoutes });
+    const look = () => mantis.eval(`JSON.stringify({
+      theme: document.documentElement.dataset.msqTheme ?? null,
+      css: document.getElementById('msq-theme')?.isConnected ?? false,
+      dark: document.documentElement.classList.contains('dark'),
+    })`).then(JSON.parse);
+    await mantis.until(`document.readyState === 'complete'`);
+    assert.deepEqual(await look(), { theme: null, css: false, dark: false }, 'Classic until a look is chosen');
+
+    let popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    assert.deepEqual(await popup.eval(`[...document.querySelectorAll('.look')].map((l) => l.dataset.id)`), LOOK_IDS);
+    await popup.until(`document.querySelector('.look.selected')?.dataset.id === 'classic'`);
+    // Every card renders its look on the stand-in page.
+    await popup.until(`[...document.querySelectorAll('.look')].every((l) => {
+      const doc = l.querySelector('iframe').contentDocument;
+      return doc?.readyState === 'complete' && (doc.documentElement.dataset.msqTheme ?? 'classic') === l.dataset.id;
+    })`, { timeout: 10000, message: 'look previews did not render' });
+    assert.equal(await popup.eval('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
+
+    await popup.eval(`document.querySelector('.look[data-id="neon"]').click()`);
+    await popup.until(`chrome.storage.sync.get('mantisTheme').then((v) => v.mantisTheme === 'neon')`);
+    await mantis.until(`document.documentElement.dataset.msqTheme === 'neon'`, { message: 'open tab was not restyled' });
+    assert.deepEqual(await look(), { theme: 'neon', css: true, dark: true }, 'Neon is always dark');
+    assert.equal(await popup.eval(`document.documentElement.dataset.look`), 'neon');
+
+    // Kinetic, the motion look: featured card; its stylesheet brings the motion machinery.
+    assert.equal(await popup.eval(`document.querySelector('.look.featured')?.dataset.id`), 'kinetic');
+    await popup.eval(`document.querySelector('.look[data-id="kinetic"]').click()`);
+    await mantis.until(`document.documentElement.dataset.msqTheme === 'kinetic'`);
+    assert.deepEqual(await look(), { theme: 'kinetic', css: true, dark: false }, 'dark mode is handed back');
+    assert.deepEqual(await mantis.eval(`(() => { const css = document.getElementById('msq-theme').textContent;
+      return ['@property --msq-angle', 'animation-timeline: scroll(root)', 'view-transition-new(root)'].filter((s) => !css.includes(s)); })()`), []);
+    await mantis.until(`!document.documentElement.hasAttribute('data-msq-switching')`, { message: 'switch reveal flag was not cleared' });
+
+    await popup.eval(`document.querySelector('.look[data-id="aurora"]').click()`);
+    await mantis.until(`document.documentElement.dataset.msqTheme === 'aurora'`);
+    assert.deepEqual(await look(), { theme: 'aurora', css: true, dark: false });
+    await popup.close();
+
+    // A new tab has the look before its first frame (no flash of Classic).
+    const second = await ext.browser.open('https://projects.webmavens.dev/my-work', { routes: lookRoutes });
+    await second.until(`'firstTheme' in window`);
+    assert.equal(await second.eval('window.firstTheme'), 'aurora');
+    await second.close();
+
+    popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`document.querySelector('.look.selected')?.dataset.id === 'aurora'`);
+    await popup.eval(`document.querySelector('.look[data-id="classic"]').click()`);
+    await mantis.until(`!document.documentElement.hasAttribute('data-msq-theme')`);
+    assert.deepEqual(await look(), { theme: null, css: false, dark: false });
+    await popup.close();
+    await mantis.close();
+  });
+
+  test('look gallery: previews each look full size and switches Mantis to it', async () => {
+    const gallery = await ext.browser.open(`chrome-extension://${ext.id}/themes.html`, { width: 1280, height: 800 });
+    await gallery.until(`document.querySelectorAll('.item').length === 7 && document.querySelector('.item.current')`);
+    assert.equal(await gallery.eval(`document.querySelector('.item.current').dataset.id`), 'classic');
+    assert.equal(await gallery.eval(`document.querySelector('.item[data-id="kinetic"] .motion')?.textContent`), 'Motion');
+    await gallery.click(`document.querySelector('.item[data-id="pop"]')`);
+    await gallery.until(`document.getElementById('frame').contentDocument?.documentElement.dataset.msqTheme === 'pop'`, { message: 'preview did not switch' });
+    assert.equal(await gallery.eval(`document.getElementById('look-name').textContent`), 'Pop');
+    assert.equal(await gallery.eval(`document.getElementById('use').textContent`), 'Use Pop');
+
+    await gallery.key('ArrowDown');
+    await gallery.until(`document.getElementById('frame').contentDocument?.documentElement.dataset.msqTheme === 'neon'`);
+    assert.equal(await gallery.eval(`document.getElementById('frame').contentDocument.documentElement.classList.contains('dark')`), true);
+    assert.equal(await gallery.eval(`document.getElementById('mode-light').disabled`), true);
+
+    await gallery.click(`document.getElementById('use')`);
+    await gallery.until(`chrome.storage.sync.get('mantisTheme').then((v) => v.mantisTheme === 'neon')`);
+    await gallery.until(`document.querySelector('.item.current')?.dataset.id === 'neon' && document.getElementById('use').disabled`);
+    await gallery.eval(`chrome.storage.sync.set({ mantisTheme: 'classic' })`);
+    await gallery.close();
+  });
+
+  test('Kinetic playground: bugs to squash, secrets, stats in Settings, and an off switch', async () => {
+    let popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.eval(`chrome.storage.sync.set({ mantisTheme: 'kinetic' })`);
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets', { routes: lookRoutes });
+    await mantis.until(`document.querySelector('mantis-playground')`, { message: 'playground did not start with Kinetic' });
+    const shadow = `document.querySelector('mantis-playground').shadowRoot`;
+    const stats = () => popup.eval(`chrome.storage.local.get('playStats').then((v) => v.playStats ?? null)`);
+
+    // A bug appears (the popup's "Release bugs" uses the same swarm) and squashing it counts.
+    await mantis.eval(`document.dispatchEvent(new CustomEvent('msq-play', { detail: 'swarm' }))`);
+    await mantis.until(`${shadow}.querySelectorAll('.bug').length >= 1`);
+    await mantis.eval(`${shadow}.querySelector('.bug').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }))`);
+    await popup.until(`chrome.storage.local.get('playStats').then((v) => v.playStats?.squashed === 1)`, { message: 'squash was not counted' });
+    assert.equal(await mantis.eval(`!!${shadow}.querySelector('.splat')`), true);
+
+    // Keys typed into a field never count; the Konami code and "bugs" elsewhere are secrets.
+    const keys = (target, list) => mantis.eval(`(() => { const t = ${target};
+      for (const key of ${JSON.stringify(list)}) t.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true })); })()`);
+    await mantis.eval(`document.body.append(Object.assign(document.createElement('input'), { id: 'field' }))`);
+    await keys(`document.getElementById('field')`, ['b', 'u', 'g', 's']);
+    await keys(`document.body`, ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']);
+    await popup.until(`chrome.storage.local.get('playStats').then((v) => v.playStats?.secrets?.length === 1)`);
+    assert.deepEqual((await stats()).secrets, ['konami']);
+    assert.ok(await mantis.eval(`${shadow}.querySelectorAll('.c').length > 20`), 'Konami confetti');
+    await keys(`document.body`, ['b', 'u', 'g', 's']);
+    await popup.until(`chrome.storage.local.get('playStats').then((v) => v.playStats?.secrets?.includes('bugs'))`);
+
+    await popup.close();
+    popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    await popup.until(`document.getElementById('ps-squashed').textContent === '1'`);
+    assert.equal(await popup.eval(`document.getElementById('ps-secrets').textContent`), '2/3');
+    assert.equal(await popup.eval(`document.querySelectorAll('.play-secrets li.found').length`), 2);
+    assert.equal(await popup.eval(`document.getElementById('play-release').disabled`), false);
+
+    await popup.click(`document.getElementById('play-enabled')`);
+    await mantis.until(`!document.querySelector('mantis-playground')`, { message: 'switching the playground off did not remove it' });
+    assert.equal(await popup.eval(`document.getElementById('play-release').disabled`), true);
+    await popup.eval(`chrome.storage.sync.set({ playground: true, mantisTheme: 'classic' }).then(() => chrome.storage.local.remove('playStats'))`);
+    await popup.close();
+    await mantis.close();
   });
 
   test('fresh install shows every header tab; the Header tab hides and reorders them', async () => {

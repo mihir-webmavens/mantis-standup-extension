@@ -210,7 +210,8 @@ class Session {
 
   /** A real mouse click at the centre of the element matched by `selectorExpression` (a JS expression). */
   async click(elementExpression) {
-    const { x, y } = await this.eval(`(r => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 }))((${elementExpression}).getBoundingClientRect())`);
+    // Scrolled into view first: a click at coordinates outside the viewport is lost.
+    const { x, y } = await this.eval(`(el => { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })(${elementExpression})`);
     for (const type of ['mousePressed', 'mouseReleased']) {
       await this.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
     }

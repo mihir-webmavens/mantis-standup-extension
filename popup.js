@@ -360,6 +360,150 @@ chrome.storage.sync.get(key).then(
   () => select(ButtonStyles.DEFAULT, false),
 );
 
+// ---------- Mantis look ----------
+// Whole-page looks for Mantis (themes.js, applied by mantis-theme.js). Each card
+// is the look itself on preview.html, scaled to fit.
+
+const looks = document.querySelector('.looks');
+const lookKey = MantisThemes.STORAGE_KEY;
+// Last look, so the popup opens in its accent before storage answers.
+try { document.documentElement.dataset.look = localStorage.getItem('look') || MantisThemes.DEFAULT; } catch { /* storage blocked */ }
+
+function lookCard(theme) {
+  const label = document.createElement('label');
+  label.className = theme.featured ? 'look featured' : 'look';
+  label.dataset.id = theme.id;
+  label.style.setProperty('--look', theme.accent);
+  label.title = theme.description;
+
+  const input = Object.assign(document.createElement('input'), { type: 'radio', name: 'look', value: theme.id, className: 'sr-only' });
+  input.addEventListener('change', () => selectLook(theme.id, true));
+
+  const stage = document.createElement('div');
+  stage.className = 'look-stage';
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches ? '1' : '0';
+  const frame = Object.assign(document.createElement('iframe'), {
+    src: `preview.html?theme=${theme.id}&dark=${dark}`, loading: 'lazy', tabIndex: -1, title: `${theme.name} preview`,
+  });
+  frame.setAttribute('aria-hidden', 'true');
+  stage.append(frame);
+  new ResizeObserver(() => stage.style.setProperty('--k', stage.clientWidth / 1100)).observe(stage);
+  label.addEventListener('mouseenter', () => frame.contentWindow?.postMessage({ type: 'msq-replay' }, '*'));
+
+  const info = document.createElement('div');
+  info.className = 'look-info';
+  const name = document.createElement('span');
+  name.className = 'look-name';
+  const dot = document.createElement('span');
+  dot.className = 'look-dot';
+  name.append(dot, theme.name);
+  if (theme.featured) name.append(Object.assign(document.createElement('span'), { className: 'look-new', textContent: 'New · Motion' }));
+  const badge = Object.assign(document.createElement('span'), { className: 'badge', textContent: 'On' });
+  const tag = Object.assign(document.createElement('span'), { className: 'look-tag', textContent: theme.tagline });
+  info.append(name, badge, tag);
+
+  label.append(input, stage, info);
+  return label;
+}
+
+function selectLook(id, save) {
+  for (const el of looks.querySelectorAll('.look')) {
+    const on = el.dataset.id === id;
+    el.classList.toggle('selected', on);
+    el.querySelector('input').checked = on;
+  }
+  document.documentElement.dataset.look = id;
+  try { localStorage.setItem('look', id); } catch { /* storage blocked */ }
+  if (!save) return;
+  chrome.storage.sync.set({ [lookKey]: id }).then(
+    () => showStatus(`${MantisThemes.byId(id).name} look on · open Mantis tabs update instantly`),
+    (err) => showStatus(`Could not save: ${err.message}`, true),
+  );
+}
+
+looks.append(...MantisThemes.THEMES.map(lookCard));
+chrome.storage.sync.get(lookKey).then(
+  (v) => selectLook(MantisThemes.byId(v[lookKey])?.id || MantisThemes.DEFAULT, false),
+  () => selectLook(MantisThemes.DEFAULT, false),
+);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && lookKey in changes) selectLook(MantisThemes.byId(changes[lookKey].newValue)?.id || MantisThemes.DEFAULT, false);
+});
+document.querySelector('#look-gallery').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('themes.html') });
+});
+
+// ---------- Kinetic playground ----------
+// Settings for playground.js: on/off (sync), the stats it keeps (local), and
+// "Release bugs" for the Mantis tab the popup was opened on.
+
+const play = {
+  box: document.querySelector('#play'),
+  enabled: document.querySelector('#play-enabled'),
+  release: document.querySelector('#play-release'),
+  note: document.querySelector('.play-note'),
+  secrets: { konami: 'Konami code', shake: 'Shake it off', bugs: 'The magic word' },
+  look: MantisThemes.DEFAULT,
+  shown: null,
+};
+
+function renderPlay() {
+  const kinetic = play.look === 'kinetic';
+  play.box.classList.toggle('on', play.enabled.checked && kinetic);
+  play.release.disabled = !(play.enabled.checked && kinetic);
+  play.note.textContent = !kinetic ? 'Needs the Kinetic look (above).' : play.enabled.checked ? '' : 'Playground is off.';
+}
+
+function renderPlayStats(stats = {}) {
+  const found = stats.secrets || [];
+  const values = {
+    'ps-squashed': String(stats.squashed || 0),
+    'ps-fastest': stats.fastest == null ? '–' : `${(stats.fastest / 1000).toFixed(1)} s`,
+    'ps-combo': String(stats.combo || 0),
+    'ps-secrets': `${found.length}/${Object.keys(play.secrets).length}`,
+  };
+  for (const [id, value] of Object.entries(values)) {
+    const el = document.getElementById(id);
+    if (el.textContent === value) continue;
+    el.textContent = value;
+    if (play.shown) {
+      el.classList.remove('bump');
+      void el.offsetWidth; // restart the bump
+      el.classList.add('bump');
+    }
+  }
+  play.shown = stats;
+  document.querySelector('.play-secrets').replaceChildren(...Object.entries(play.secrets).map(([id, name]) =>
+    Object.assign(document.createElement('li'), { className: found.includes(id) ? 'found' : '', textContent: found.includes(id) ? `✨ ${name}` : '???' })));
+}
+
+play.enabled.addEventListener('change', () => {
+  renderPlay();
+  chrome.storage.sync.set({ playground: play.enabled.checked }).then(
+    () => showStatus(`Playground ${play.enabled.checked ? 'on' : 'off'}`),
+    (err) => showStatus(`Could not save: ${err.message}`, true),
+  );
+});
+play.release.addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const reply = tab?.id ? await chrome.tabs.sendMessage(tab.id, { type: 'play', count: 3 }).catch(() => null) : null;
+  play.note.textContent = reply?.ok ? '🐞 Released! Catch them in your Mantis tab.' : 'Open a Mantis tab first, then try again.';
+});
+
+Promise.all([chrome.storage.sync.get(['playground', lookKey]), chrome.storage.local.get('playStats')]).then(([sync, local]) => {
+  play.enabled.checked = sync.playground !== false;
+  play.look = MantisThemes.byId(sync[lookKey])?.id || MantisThemes.DEFAULT;
+  renderPlay();
+  renderPlayStats(local.playStats);
+}, () => renderPlay());
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && lookKey in changes) {
+    play.look = MantisThemes.byId(changes[lookKey].newValue)?.id || MantisThemes.DEFAULT;
+    renderPlay();
+  }
+  if (area === 'local' && 'playStats' in changes) renderPlayStats(changes.playStats.newValue);
+});
+
 // ---------- tabs ----------
 
 const tabs = [...document.querySelectorAll('.tab')];
