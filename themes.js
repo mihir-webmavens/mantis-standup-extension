@@ -25,8 +25,8 @@ const MantisThemes = (() => {
     },
     {
       id: 'kinetic', name: 'Kinetic', tagline: 'Everything moves with intent',
-      description: 'A motion-first look. Pages unfold in 3D, cards tilt toward the cursor with a moving glare and a spinning gradient edge, buttons pull toward the pointer and ripple where you click, and one gradient pill glides between header tabs. Scrolling reveals content, tightens the header and fills a progress line.',
-      traits: ['3D unfold entrances', 'Tilt cards with glare', 'Magnetic buttons + ripple', 'Gliding tab pill', 'Scroll-driven reveals', 'Circular switch reveal', 'Playground: bugs & secrets'],
+      description: 'A motion-first look. Pages unfold in 3D, cards get a gradient edge on hover, buttons pull toward the pointer and ripple where you click, and one gradient pill glides between header tabs. Scrolling reveals content, tightens the header and fills a progress line.',
+      traits: ['3D unfold entrances', 'Gradient-edge cards', 'Magnetic buttons + ripple', 'Gliding tab pill', 'Scroll-driven reveals', 'Circular switch reveal', 'Playground: bugs & secrets'],
       swatch: ['#f7f8fc', '#ff4d6d', '#ff9f1c', '#2ec4b6'], accent: '#ff4d6d', spotlight: true, motion: true, featured: true,
     },
     {
@@ -252,9 +252,9 @@ const MantisThemes = (() => {
         & [data-flux-navbar]:not(:has(> :hover)) > :is(${CURRENT}), & [data-flux-navbar] > :hover { color: #fff !important; }
         & [data-flux-navbar]:not(:has(> :hover)) > :is(${CURRENT}) *, & [data-flux-navbar] > :hover * { color: inherit !important; }
 
-        /* Cards: tilt toward the cursor, glare where it points, spinning gradient edge. */
+        /* Cards: on hover, a gradient edge and a softer, deeper shadow; no tilt or cursor tracking. */
         & ${CARD} {
-          /* The edge spin is always listed (paused) so hovering never restarts the entrance. */
+          /* The edge spin stays listed (paused) so the animation list never changes and the entrance never restarts. */
           animation: msq-reveal linear both, msq-unfold var(--msq-dur) var(--msq-ease) backwards, msq-spin 3s linear infinite;
           animation-timeline: auto, auto, auto; animation-delay: 0s, calc(var(--msq-stagger) * 1.5), 0s;
           animation-play-state: running, running, paused;
@@ -262,21 +262,11 @@ const MantisThemes = (() => {
           box-shadow: 0 1px 2px rgb(0 0 0 / .04), 0 12px 30px -22px rgb(var(--msq-coral) / .45);
         }
         & ${CARD}:hover {
-          transform: perspective(900px) rotateX(calc(var(--msq-ny, 0) * -6deg)) rotateY(calc(var(--msq-nx, 0) * 7deg)) translateY(-4px);
-          transition: transform .18s ease-out, box-shadow .5s ease, rotate .9s var(--msq-elastic), scale .9s var(--msq-elastic);
           border-color: transparent !important;
           background:
-            radial-gradient(420px circle at var(--msq-x, 50%) var(--msq-y, 50%), rgb(255 255 255 / .55), transparent 55%) padding-box,
             linear-gradient(var(--msq-surface), var(--msq-surface)) padding-box,
             var(--msq-ring) border-box !important;
-          box-shadow: 0 28px 50px -24px rgb(var(--msq-coral) / .55), 0 10px 20px -16px rgb(var(--msq-teal) / .5);
-          animation-play-state: running;
-        }
-        &.dark ${CARD}:hover {
-          background:
-            radial-gradient(420px circle at var(--msq-x, 50%) var(--msq-y, 50%), rgb(255 255 255 / .09), transparent 55%) padding-box,
-            linear-gradient(var(--msq-surface), var(--msq-surface)) padding-box,
-            var(--msq-ring) border-box !important;
+          box-shadow: 0 18px 40px -24px rgb(var(--msq-coral) / .5), 0 8px 18px -16px rgb(var(--msq-teal) / .45);
         }
 
         /* Buttons: pulled toward the pointer, ripple from the click point. */
@@ -672,7 +662,7 @@ const MantisThemes = (() => {
 
   // Cursor tracking for the hovered card/row (and, for motion looks, button):
   // --msq-x/--msq-y is the pointer relative to it (glows, ripple origin) and
-  // --msq-nx/--msq-ny the same from -1 to 1 around its centre (tilt, magnet).
+  // --msq-nx/--msq-ny the same from -1 to 1 around its centre (magnetic buttons).
   // getLook() returns the look on screen. Only custom properties are set.
   function spotlight(win, getLook) {
     let frame = 0;
