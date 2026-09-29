@@ -795,3 +795,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 chrome.permissions.onAdded.addListener(wireAutoEodNotifications);
 wireAutoEodNotifications();
+
+// ---------- Mantis header layout ----------
+// Existing users keep the pre-1.8 header (no saved layout, see header-layout.js);
+// a fresh install starts with every header tab shown.
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details?.reason !== 'install') return;
+  const key = 'headerLayout';
+  if (!(await chrome.storage.sync.get(key))[key]) await chrome.storage.sync.set({ [key]: { order: [], hidden: [] } });
+});

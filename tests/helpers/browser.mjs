@@ -165,13 +165,15 @@ class Session {
       if (msg.method !== 'Fetch.requestPaused' || msg.sessionId !== this.sessionId) return;
       const { requestId, request } = msg.params;
       const handler = Object.entries(routes).find(([prefix]) => request.url.startsWith(prefix))?.[1];
-      if (!handler) return this.send('Fetch.continueRequest', { requestId });
+      // A page or browser closed mid-request can no longer be answered; that's fine.
+      const closed = (err) => { if (!/Session with given id not found|closed/i.test(err.message)) throw err; };
+      if (!handler) return this.send('Fetch.continueRequest', { requestId }).catch(closed);
       const { status = 200, body = '', headers = { 'Content-Type': 'text/html; charset=utf-8' } } = await handler(request);
       await this.send('Fetch.fulfillRequest', {
         requestId, responseCode: status,
         responseHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })),
         body: Buffer.from(body).toString('base64'),
-      });
+      }).catch(closed);
     });
     await this.send('Fetch.enable', { patterns: Object.keys(routes).map((prefix) => ({ urlPattern: `${prefix}*` })) });
   }

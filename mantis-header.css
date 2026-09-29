@@ -1,10 +1,12 @@
-/* Mantis header items the team doesn't use: Unassigned, Todos, the GitHub menu
-   and the project switcher. Hidden only in this browser; Mantis is unchanged.
+/* Default Mantis header: Unassigned, Todos, the GitHub menu and the project
+   switcher hidden. Hidden only in this browser; Mantis is unchanged.
    Chrome applies this file (manifest "css") before the page is first drawn, so
-   the items never flash, and it survives Livewire replacing <head>. */
-header [data-flux-navbar] a[href*="/tickets?unassigned=1"],
-header [data-flux-navbar] a[href$="/todos"],
-header [data-flux-navbar] ui-dropdown:has(a[href*="/github/"]),
-header ui-dropdown:has(button[aria-label="Switch project"]) {
+   the items never flash, and it survives Livewire replacing <head>.
+   Once mantis-header.js knows the Header tab's layout it marks <html> with
+   data-msq-header and its own stylesheet takes over. */
+html:not([data-msq-header]) header [data-flux-navbar] a[href*="/tickets?unassigned=1"],
+html:not([data-msq-header]) header [data-flux-navbar] a[href$="/todos"],
+html:not([data-msq-header]) header [data-flux-navbar] ui-dropdown:has(a[href*="/github/"]),
+html:not([data-msq-header]) header ui-dropdown:has(button[aria-label="Switch project"]) {
   display: none !important;
 }

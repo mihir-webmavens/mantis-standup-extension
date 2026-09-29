@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -46,6 +46,26 @@ async function startExtension(dir, server) {
   await sw.route(standupRoutes(server));
   return { browser, id, sw, popupUrl: `chrome-extension://${id}/popup.html` };
 }
+
+// A Mantis-like page (Flux header markup) that records what the first frame would show.
+const HEADER_PAGE = `<!doctype html><html><head><meta charset="utf-8">
+      <style>header { display: flex; align-items: center; height: 56px; } nav, .right { display: flex; gap: 8px; }</style></head>
+      <body style="margin:0"><div class="layout">
+      <header data-flux-header><a href="/dashboard">Mantis</a>
+        <nav data-flux-navbar><a href="https://projects.webmavens.dev/tickets">Tickets</a><a href="https://projects.webmavens.dev/my-work">My Work</a>
+          <a href="https://projects.webmavens.dev/tickets?unassigned=1">Unassigned</a><a href="https://projects.webmavens.dev/todos">Todos</a>
+          <ui-dropdown><button type="button">GitHub</button><ui-menu><a href="https://projects.webmavens.dev/github/activity">Activity</a></ui-menu></ui-dropdown></nav>
+        <div style="flex:1"></div>
+        <div class="right"><ui-dropdown><button type="button" aria-label="Switch project">All projects</button></ui-dropdown><span>Mihir</span></div>
+      </header>
+      <script>requestAnimationFrame(() => {
+        window.firstFrame = {
+          visible: [...document.querySelectorAll('header nav > a, header nav > ui-dropdown > button, header ui-dropdown > button[aria-label]')].filter((el) => el.offsetParent !== null).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map((el) => el.textContent),
+          launcher: !!document.querySelector('header mantis-ai-launcher'),
+        };
+      });</script>
+      <main><h1>Ticket</h1></main></div></body></html>`;
+const headerRoutes = { 'https://projects.webmavens.dev/': () => ({ body: HEADER_PAGE }) };
 
 const mantisRoutes = { 'https://projects.webmavens.dev/': () => ({ body: MANTIS_PAGE }) };
 
@@ -161,26 +181,66 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     await popup.close();
   });
 
+  test('fresh install shows every header tab; the Header tab hides and reorders them', async () => {
+    assert.deepEqual(await ext.sw.eval(`chrome.storage.sync.get('headerLayout').then((v) => v.headerLayout)`), { order: [], hidden: [] });
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: headerRoutes });
+    const shown = () => mantis.eval(`[...document.querySelectorAll('header nav > *, header ui-dropdown:has(> button[aria-label])')]
+      .filter((el) => el.offsetParent !== null).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+      .map((el) => el.getAttribute('data-msq-tab'))`);
+    await ext.sw.until(`chrome.storage.local.get('headerItems').then((v) => v.headerItems?.length === 6)`);
+    assert.deepEqual(await shown(), ['tickets', 'my-work', 'unassigned', 'todos', 'github', 'project-switcher']);
+
+    let popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.eval(`document.querySelector('#tab-header').click()`);
+    await popup.until(`document.querySelectorAll('.hdr-item').length === 6`);
+    const rows = () => popup.eval(`[...document.querySelectorAll('.hdr-item')].map((li) => li.querySelector('.hdr-name').textContent + (li.querySelector('input').checked ? '' : ' (off)'))`);
+    assert.deepEqual(await rows(), ['Tickets', 'My Work', 'Unassigned', 'Todos', 'GitHub', 'Project switcher']);
+
+    // Hide Todos and the project switcher.
+    await popup.eval(`['todos', 'project-switcher'].forEach((k) => document.querySelector('.hdr-item[data-key="' + k + '"] input').click())`);
+    await mantis.until(`!document.querySelector('[data-msq-tab="todos"]').offsetParent && !document.querySelector('[data-msq-tab="project-switcher"]').offsetParent`);
+    // Keyboard: My Work up. Drag and drop: GitHub onto the top half of My Work.
+    await popup.eval(`document.querySelector('.hdr-item[data-key="my-work"] .hdr-grip').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))`);
+    await popup.eval(`(() => {
+      const drag = (type, target, y) => target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientY: y, dataTransfer: new DataTransfer() }));
+      const github = document.querySelector('.hdr-item[data-key="github"]');
+      const myWork = document.querySelector('.hdr-item[data-key="my-work"]');
+      drag('dragstart', github, 0);
+      drag('dragover', myWork, myWork.getBoundingClientRect().top + 2);
+      drag('dragend', github, 0);
+    })()`);
+    const expected = ['GitHub', 'My Work', 'Tickets', 'Unassigned', 'Todos (off)', 'Project switcher (off)'];
+    assert.deepEqual(await rows(), expected);
+    await mantis.until(`document.querySelector('[data-msq-tab="github"]').getBoundingClientRect().left < document.querySelector('[data-msq-tab="tickets"]').getBoundingClientRect().left`);
+    assert.deepEqual(await shown(), ['github', 'my-work', 'tickets', 'unassigned']);
+
+    // Kept after reopening the popup and reloading Mantis.
+    await popup.close();
+    popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.until(`document.querySelectorAll('.hdr-item').length === 6`);
+    assert.deepEqual(await rows(), expected);
+    await mantis.close();
+    const reloaded = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: headerRoutes });
+    await reloaded.until(`window.firstFrame`);
+    assert.deepEqual(await reloaded.eval(`window.firstFrame.visible`), ['GitHub', 'My Work', 'Tickets', 'Unassigned']);
+
+    // Reset shows every tab in Mantis's order.
+    await popup.eval(`document.querySelector('#hdr-reset').click()`);
+    await reloaded.until(`document.querySelector('[data-msq-tab="todos"]').offsetParent !== null`);
+    assert.deepEqual(await rows(), ['Tickets', 'My Work', 'Unassigned', 'Todos', 'GitHub', 'Project switcher']);
+    await popup.close();
+    await reloaded.close();
+  });
+
   test('no flicker: header items are hidden and MantisAI is in the header before the first frame is drawn', async () => {
-    // A Mantis-like page (Flux header markup) that records what the first frame would show.
-    const page = `<!doctype html><html><head><meta charset="utf-8">
-      <style>header { display: flex; align-items: center; height: 56px; } nav, .right { display: flex; gap: 8px; }</style></head>
-      <body style="margin:0"><div class="layout">
-      <header data-flux-header><a href="/dashboard">Mantis</a>
-        <nav data-flux-navbar><a href="https://projects.webmavens.dev/tickets">Tickets</a><a href="https://projects.webmavens.dev/my-work">My Work</a>
-          <a href="https://projects.webmavens.dev/tickets?unassigned=1">Unassigned</a><a href="https://projects.webmavens.dev/todos">Todos</a>
-          <ui-dropdown><button type="button">GitHub</button><ui-menu><a href="https://projects.webmavens.dev/github/activity">Activity</a></ui-menu></ui-dropdown></nav>
-        <div style="flex:1"></div>
-        <div class="right"><ui-dropdown><button type="button" aria-label="Switch project">All projects</button></ui-dropdown><span>Mihir</span></div>
-      </header>
-      <script>requestAnimationFrame(() => {
-        window.firstFrame = {
-          visible: [...document.querySelectorAll('header nav > a, header nav > ui-dropdown > button, header ui-dropdown > button[aria-label]')].filter((el) => el.offsetParent !== null).map((el) => el.textContent),
-          launcher: !!document.querySelector('header mantis-ai-launcher'),
-        };
-      });</script>
-      <main><h1>Ticket</h1></main></div></body></html>`;
-    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: { 'https://projects.webmavens.dev/': () => ({ body: page }) } });
+    // Existing users (no saved header layout) keep the pre-1.8 hidden items. The
+    // first visit may still carry an older layout in the page's mirror; the second
+    // shows what a normal page load draws.
+    await ext.sw.eval(`chrome.storage.sync.remove('headerLayout')`);
+    const first = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: headerRoutes });
+    await first.until(`localStorage.getItem('msq-header-layout') === '{"layout":null}'`);
+    await first.close();
+    const mantis = await ext.browser.open('https://projects.webmavens.dev/tickets/8815', { routes: headerRoutes });
     await mantis.until(`window.firstFrame`);
     assert.deepEqual(await mantis.eval(`window.firstFrame`), { visible: ['Tickets', 'My Work'], launcher: true });
     await mantis.close();

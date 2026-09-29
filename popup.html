@@ -18,6 +18,7 @@
     <button type="button" class="tab" role="tab" id="tab-eod" aria-controls="pane-eod" aria-selected="true">EOD <span class="tab-count" hidden></span></button>
     <button type="button" class="tab" role="tab" id="tab-standup" aria-controls="pane-standup" aria-selected="false" tabindex="-1">Add Standup</button>
     <button type="button" class="tab" role="tab" id="tab-settings" aria-controls="pane-settings" aria-selected="false" tabindex="-1">Settings</button>
+    <button type="button" class="tab" role="tab" id="tab-header" aria-controls="pane-header" aria-selected="false" tabindex="-1">Header</button>
   </nav>
 
   <div class="scroll">
@@ -189,6 +190,21 @@
         <p class="sub ai-note">Needs Node.js 18+ and Claude Code, logged in (<code>claude</code>), with the Mantis connection <code>webmavens-projects</code> signed in (<code>/mcp</code>) for lookups. Changes in Mantis always ask for your approval. Linux and macOS.</p>
       </section>
     </div>
+
+    <div class="pane" id="pane-header" role="tabpanel" aria-labelledby="tab-header" hidden>
+      <section class="hdr" aria-labelledby="hdr-title">
+        <div class="keys-head">
+          <div>
+            <h2 id="hdr-title">Mantis header</h2>
+            <p class="sub">Choose which tabs appear in the Mantis header and arrange them in your preferred order.</p>
+          </div>
+          <button type="button" class="link" id="hdr-reset" title="Show every tab in Mantis's own order">Reset</button>
+        </div>
+        <p class="hdr-empty" hidden>Open <a href="https://projects.webmavens.dev/" target="_blank" rel="noopener">Mantis</a> once to load its header tabs here.</p>
+        <ul class="hdr-list" aria-describedby="hdr-hint"></ul>
+        <p class="sub hdr-hint" id="hdr-hint">Drag tabs by ☰ to change their order (or focus ☰ and use ↑ ↓). Open Mantis tabs update instantly.</p>
+      </section>
+    </div>
   </div>
 
   <footer>
@@ -196,6 +212,7 @@
   </footer>
 
   <script src="button-styles.js"></script>
+  <script src="header-layout.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

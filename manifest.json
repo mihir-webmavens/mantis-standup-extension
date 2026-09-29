@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mantis Quick Standup",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Add standups and EODs to standup.webmavens.dev from Mantis, plus MantisAI chat through your local Claude CLI.",
   "icons": {
     "16": "icons/icon16.png",
@@ -33,7 +33,7 @@
     {
       "matches": ["https://projects.webmavens.dev/*"],
       "css": ["mantis-header.css"],
-      "js": ["mantis-ai.js"],
+      "js": ["header-layout.js", "mantis-header.js", "mantis-ai.js"],
       "run_at": "document_start"
     },
     {

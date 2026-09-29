@@ -760,3 +760,123 @@ ai.model.addEventListener('change', () => {
 });
 chrome.storage.sync.get(AI_MODEL_KEY).then((v) => { ai.model.value = v[AI_MODEL_KEY] || ''; }, () => {});
 checkAi(); // without the permission this answers "Not set up" without starting the helper
+
+// ---------- Header ----------
+// Which Mantis header tabs show, and their order (see header-layout.js and
+// mantis-header.js). The tabs listed are the ones last seen on a Mantis page.
+
+const hdr = {
+  list: document.querySelector('.hdr-list'),
+  empty: document.querySelector('.hdr-empty'),
+  hint: document.querySelector('.hdr-hint'),
+  reset: document.querySelector('#hdr-reset'),
+};
+let hdrItems = [];
+let hdrLayout = null;
+let hdrDragged = null;
+
+function renderHeader() {
+  const resolved = HeaderLayout.resolve(hdrItems, hdrLayout);
+  hdr.empty.hidden = resolved.length > 0;
+  hdr.hint.hidden = hdr.reset.hidden = resolved.length === 0;
+  hdr.list.replaceChildren(...resolved.map((it) => {
+    const li = el('li', 'hdr-item');
+    li.dataset.key = it.key;
+    li.classList.toggle('off', it.hidden);
+    if (it.fixed) {
+      li.classList.add('fixed');
+      li.append(el('span', 'hdr-grip', ''));
+    } else {
+      li.draggable = true;
+      const grip = el('button', 'hdr-grip', '☰');
+      grip.type = 'button';
+      grip.setAttribute('aria-label', `Move ${it.label} (up/down arrows)`);
+      grip.addEventListener('keydown', (e) => moveByKey(e, li));
+      li.append(grip);
+    }
+    const name = el('span', 'hdr-name', it.label);
+    name.id = `hdr-${it.key}`;
+    li.append(name);
+    if (it.fixed) li.append(el('span', 'sub hdr-fixed', 'fixed place'));
+    const sw = el('label', 'switch');
+    sw.title = `Show or hide ${it.label}`;
+    const box = el('input');
+    box.type = 'checkbox';
+    box.setAttribute('role', 'switch');
+    box.setAttribute('aria-labelledby', name.id);
+    box.checked = !it.hidden;
+    box.addEventListener('change', () => {
+      li.classList.toggle('off', !box.checked);
+      saveHeader(`${it.label} ${box.checked ? 'shown' : 'hidden'}`);
+    });
+    const track = el('span', 'track');
+    track.append(el('span', 'thumb'));
+    sw.append(box, track);
+    li.append(sw);
+    return li;
+  }));
+}
+
+function saveHeader(message) {
+  const rows = [...hdr.list.children];
+  hdrLayout = {
+    order: rows.filter((li) => !li.classList.contains('fixed')).map((li) => li.dataset.key),
+    hidden: rows.filter((li) => !li.querySelector('input').checked).map((li) => li.dataset.key),
+  };
+  chrome.storage.sync.set({ [HeaderLayout.STORAGE_KEY]: hdrLayout }).then(
+    () => showStatus(`${message} · open Mantis tabs update instantly`),
+    () => showStatus('Could not save the header', true),
+  );
+}
+
+function moveByKey(e, li) {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  const other = e.key === 'ArrowUp' ? li.previousElementSibling : li.nextElementSibling;
+  if (!other || other.classList.contains('fixed')) return;
+  if (e.key === 'ArrowUp') other.before(li); else other.after(li);
+  li.querySelector('.hdr-grip').focus();
+  saveHeader(`${li.querySelector('.hdr-name').textContent} moved`);
+}
+
+hdr.list.addEventListener('dragstart', (e) => {
+  hdrDragged = e.target.closest?.('.hdr-item[draggable="true"]');
+  if (!hdrDragged) return;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', hdrDragged.dataset.key);
+  requestAnimationFrame(() => hdrDragged?.classList.add('dragging'));
+});
+hdr.list.addEventListener('dragover', (e) => {
+  if (!hdrDragged) return;
+  e.preventDefault();
+  const over = e.target.closest?.('.hdr-item');
+  if (!over || over === hdrDragged || over.classList.contains('fixed')) return;
+  const r = over.getBoundingClientRect();
+  if (e.clientY < r.top + r.height / 2) over.before(hdrDragged); else over.after(hdrDragged);
+});
+hdr.list.addEventListener('drop', (e) => e.preventDefault());
+hdr.list.addEventListener('dragend', () => {
+  if (!hdrDragged) return;
+  const moved = hdrDragged;
+  hdrDragged = null;
+  moved.classList.remove('dragging');
+  const order = [...hdr.list.children].filter((li) => !li.classList.contains('fixed')).map((li) => li.dataset.key);
+  if (order.join() !== HeaderLayout.resolve(hdrItems, hdrLayout).filter((it) => !it.fixed).map((it) => it.key).join()) {
+    saveHeader(`${moved.querySelector('.hdr-name').textContent} moved`);
+  }
+});
+
+hdr.reset.addEventListener('click', () => {
+  hdrLayout = { order: [], hidden: [] };
+  renderHeader();
+  saveHeader('Header reset: every tab shown');
+});
+
+Promise.all([chrome.storage.local.get(HeaderLayout.ITEMS_KEY), chrome.storage.sync.get(HeaderLayout.STORAGE_KEY)]).then(
+  ([local, sync]) => {
+    hdrItems = local[HeaderLayout.ITEMS_KEY] || [];
+    hdrLayout = sync[HeaderLayout.STORAGE_KEY] || null;
+    renderHeader();
+  },
+  () => renderHeader(),
+);
