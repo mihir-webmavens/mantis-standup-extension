@@ -168,6 +168,11 @@
     }
     .eod-progress.done { background: var(--filled-bg); color: var(--filled-text); border-color: var(--filled-border); }
     .eod-progress[hidden] { display: none; }
+    .m-ticket {
+      width: 100%; height: 26px; padding: 2px 8px; text-overflow: ellipsis;
+      border: 1px solid var(--input-border); border-radius: 6px; font-size: 13px; color: var(--text); background: var(--card);
+    }
+    .m-ticket:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     .m-est:focus { outline: 3px solid var(--accent-ring); border-color: var(--accent); }
     label { display: block; font-weight: 600; margin-bottom: 4px; }
     textarea {
@@ -260,7 +265,8 @@
           <button class="close" type="button" aria-label="Close">&times;</button>
         </div>
         <dl class="meta">
-          <dt>Ticket</dt><dd class="m-ticket"></dd>
+          <dt><label class="dt-label" for="mqs-ticket">Ticket</label></dt>
+          <dd><input id="mqs-ticket" class="m-ticket" type="text" autocomplete="off" aria-label="Ticket"></dd>
           <dt>Link</dt><dd class="m-link"></dd>
           <dt><label class="dt-label" for="mqs-priority">Priority</label></dt>
           <dd class="m-priority">
@@ -329,7 +335,8 @@
       priorityTouched = true; // the user's choice now wins over what the page shows
       ui.priorityNote.textContent = '';
     });
-    for (const field of [ui.text, ui.estTime, ui.prioritySelect]) {
+    ui.ticket.addEventListener('input', () => { ticketTouched = true; }); // keep what the user typed
+    for (const field of [ui.ticket, ui.text, ui.estTime, ui.prioritySelect]) {
       closeOnEscape(field, closePanel);
       field.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit();
@@ -372,14 +379,48 @@
     return `${location.origin}/tickets/${id}`;
   }
 
+  // The ticket's title. Mantis shows "#8263 Update the project count" at the top
+  // (number and title in separate elements), so find the first short element
+  // whose text starts with "#8263" and has more after it; else the page's <h1>.
+  function ticketTitle(id = currentTicket) {
+    if (!id || !document.body) return '';
+    const lead = new RegExp(`^#?${id}\\b\\s*[-:–·]?\\s*`);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.nodeValue.includes(`#${id}`)) continue;
+      let el = node.parentElement;
+      for (let depth = 0; el && el !== document.body && depth < 4; depth++, el = el.parentElement) {
+        const text = el.textContent.replace(/\s+/g, ' ').trim();
+        if (text.length > 250) break;
+        if (text.startsWith(`#${id}`) && text.replace(lead, '')) return text.replace(lead, '').slice(0, 200);
+      }
+    }
+    const heading = [...document.querySelectorAll('h1')].find((h) => !isOurs(h) && h.innerText.trim());
+    return (heading?.innerText || '').replace(/\s+/g, ' ').trim().replace(lead, '').slice(0, 200);
+  }
+
+  // What the Ticket field starts with: "#8263 Update the project count".
+  function ticketText() {
+    const title = ticketTitle();
+    return title ? `#${currentTicket} ${title}` : `#${currentTicket}`;
+  }
+
+  // Just a number ("#123" or "123") is sent as the number, as before; anything
+  // longer (number and title) is sent as typed.
+  function ticketValue(text) {
+    const value = text.trim();
+    return !value || /^#?\d+$/.test(value) ? value.replace(/^#/, '') || currentTicket : value;
+  }
+
   // Tickets without a priority in Mantis are submitted as Low.
   const DEFAULT_PRIORITY = 'Low';
   let priorityTouched = false; // set once the user picks a priority in the dropdown
+  let ticketTouched = false; // set once the user edits the Ticket field
 
   // The dropdown follows the ticket's priority until the user changes it.
   function refreshMeta() {
     const detected = detectPriority();
-    ui.ticket.textContent = `#${currentTicket}`;
+    if (!ticketTouched) ui.ticket.value = ticketText();
     ui.link.textContent = ticketUrl(currentTicket);
     if (!priorityTouched) {
       ui.prioritySelect.value = detected || DEFAULT_PRIORITY;
@@ -510,7 +551,7 @@
   }
 
   function eodTicketId(eod) {
-    return /^#?(\d+)$/.exec(eod.ticket.trim())?.[1]
+    return /^#?(\d+)(?:\s|$)/.exec(eod.ticket.trim())?.[1]
       || /\/tickets\/(\d+)\/?$/.exec(eod.link || '')?.[1]
       || null;
   }
@@ -530,7 +571,8 @@
     const li = el('li', `eod ${editing ? 'editing' : eod.update ? 'filled' : 'pending'}`);
     const top = el('div', 'eod-top');
     const id = el('div', 'eod-id');
-    const ticket = eod.link ? el('a', '', `#${eod.ticket}`) : el('strong', '', `#${eod.ticket}`);
+    const label = eod.ticket.trim().startsWith('#') ? eod.ticket.trim() : `#${eod.ticket.trim()}`; // "8263" or "#8263 Title"
+    const ticket = eod.link ? el('a', '', label) : el('strong', '', label);
     if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
     id.append(ticket);
     if (eod.priority) id.append(el('span', `badge ${eod.priority.toLowerCase()}`, eod.priority));
@@ -642,6 +684,7 @@
     if (ui.submit.disabled) return;
 
     const ticket = currentTicket;
+    const ticketField = ticketValue(ui.ticket.value);
     const plannedAction = ui.text.value.trim();
     const estTime = ui.estTime.value.trim() || '-';
     // Re-read at submit time: Livewire may have updated the page since opening.
@@ -656,13 +699,14 @@
     try {
       const res = await chrome.runtime.sendMessage({
         type: 'submitStandup',
-        payload: { ticket, plannedAction, repoLink: ticketUrl(ticket), priority, estTime },
+        payload: { ticket: ticketField, plannedAction, repoLink: ticketUrl(ticket), priority, estTime },
       });
       if (res?.ok) {
         ui.text.value = '';
         ui.estTime.value = '-';
         priorityTouched = false;
-        refreshMeta(); // back to the ticket's own priority for the next standup
+        ticketTouched = false;
+        refreshMeta(); // back to the ticket's own priority and title for the next standup
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
         document.dispatchEvent(new CustomEvent('msq-done', { detail: 'standup' })); // playground.js may celebrate
         loadEods(); // the new standup is also a new EOD entry
@@ -692,10 +736,15 @@
       ui.text.value = '';
       ui.estTime.value = '-';
       priorityTouched = false;
+      ticketTouched = false;
       ui.status.hidden = true;
       renderDuplicateNotice();
       if (id && !ui.panel.hidden) refreshMeta();
       if (!id) closePanel();
+    } else if (id && !ticketTouched && !ui.panel.hidden) {
+      // Livewire may draw the new ticket's heading after the URL changes.
+      const text = ticketText();
+      if (ui.ticket.value !== text) ui.ticket.value = text;
     }
   }
 
@@ -704,7 +753,7 @@
     // The toolbar popup's Add Standup form pre-fills from the open ticket.
     if (msg?.type === 'ticketInfo') {
       const ticket = ticketIdFromUrl();
-      return sendResponse(ticket ? { ticket, link: ticketUrl(ticket), priority: detectPriority() } : {});
+      return sendResponse(ticket ? { ticket, title: ticketTitle(ticket), link: ticketUrl(ticket), priority: detectPriority() } : {});
     }
     if (msg?.type !== 'shortcut' || !host) return;
     if (msg.command === 'open-standup') {

@@ -281,7 +281,7 @@ function todaysStandups(eods) {
 function eodReminderNote(eods, preview) {
   const pending = pendingEods(eods);
   if (!pending.length && !preview) return null;
-  const tickets = pending.slice(0, 4).map((e) => `#${e.ticket}`).join(', ') + (pending.length > 4 ? '…' : '');
+  const tickets = pending.slice(0, 4).map((e) => `#${ticketNumbers(e.ticket)[0] ?? e.ticket}`).join(', ') + (pending.length > 4 ? '…' : '');
   return pending.length
     ? { title: `${plural(pending.length, 'EOD')} still to fill in`, message: `${tickets}. Click to open the EOD page.`, count: pending.length }
     : { title: 'No pending EODs', message: 'All EODs are filled in. This is how the reminder will look.', count: 0 };
@@ -640,9 +640,18 @@ function scheduleAutoEod() {
   return schedulingAutoEod;
 }
 
-// Ticket numbers in the EOD's ticket column ("8386", "#8386", "8386, 8390").
+// Ticket numbers in the EOD's ticket column ("8386", "#8386", "8386, 8390"). When
+// a title follows ("#8386 Update 2 pages"), only the numbers before it count.
 function ticketNumbers(ticket) {
-  return [...new Set(String(ticket).match(/\d+/g) || [])];
+  const text = String(ticket);
+  const lead = /^[\s#\d,]*/.exec(text)[0].match(/\d+/g);
+  return [...new Set(lead || text.match(/\d+/g) || [])];
+}
+
+// "8386" -> "#8386"; "#8386 Update the project count" stays as it is.
+function ticketLabel(ticket) {
+  const text = String(ticket).trim();
+  return text.startsWith('#') ? text : `#${text}`;
 }
 
 // "#8386", "8386:", "MT-8386", "(8386)" mention 8386; "18386", "v8386", "8386px", "1.8386" do not.
@@ -676,7 +685,7 @@ function autoEodSystemPrompt() {
 function autoEodPrompt(eod, commits) {
   const list = commits.map((c) => `<commit>\n${c.message.slice(0, AUTO_EOD_MESSAGE_LIMIT)}\n</commit>`).join('\n');
   return [
-    `Ticket #${eod.ticket}`,
+    `Ticket ${ticketLabel(eod.ticket)}`,
     `<planned_action>${eod.plannedAction || '-'}</planned_action>`,
     `Today's commits for this ticket (${commits.length}, oldest first):`,
     list,

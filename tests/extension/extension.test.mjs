@@ -455,7 +455,7 @@ describe('extension in Chromium', { skip: !chromium && 'no extension-capable Chr
     assert.equal(await mantis.eval(`document.querySelector('mantis-quick-standup').shadowRoot.querySelector('.m-priority-select').value`), 'High');
     // What the popup's Add Standup form pre-fills from this ticket.
     assert.deepEqual(await ext.sw.eval(`chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => chrome.tabs.sendMessage(tab.id, { type: 'ticketInfo' }))`),
-      { ticket: '123', link: 'https://projects.webmavens.dev/tickets/123', priority: 'High' });
+      { ticket: '123', title: 'Mantis', link: 'https://projects.webmavens.dev/tickets/123', priority: 'High' });
     await mantis.close();
   });
 

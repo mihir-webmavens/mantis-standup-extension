@@ -129,6 +129,46 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
     await page.close();
   });
 
+  test('Ticket field: number and title from the page, editable, sent as shown', async () => {
+    const page = await openMantis('tickets/123');
+    const r = await run(page, async () => {
+      const root = T.root(), field = root.querySelector('#mqs-ticket'), out = {};
+      const send = async (action) => {
+        root.querySelector('#mqs-action').value = action;
+        root.querySelector('.panel-standup .submit').click(); await T.wait(200);
+        return T.payloads.find((p) => p?.plannedAction === action)?.ticket;
+      };
+      const type = (text) => { field.value = text; field.dispatchEvent(new Event('input')); };
+      root.querySelector('.fab-standup').click();
+      out.filled = field.value;
+      out.sent = await send('A');
+      type('#123 My own words');
+      await T.wait(1200); // the page check never overwrites what you typed
+      out.kept = field.value;
+      out.sentEdited = await send('B');
+      out.after = field.value;
+      type(' #123 ');
+      out.sentNumber = await send('C');
+      field.focus(); T.key('Escape');
+      out.escCloses = root.querySelector('.panel-standup').hidden;
+      out.leaked = T.leaked;
+      return out;
+    });
+    assert.deepEqual(r, { filled: '#123 Mantis page', sent: '#123 Mantis page', kept: '#123 My own words', sentEdited: '#123 My own words',
+      after: '#123 Mantis page', sentNumber: '123', escCloses: true, leaked: 0 });
+    await page.close();
+  });
+
+  test('Ticket field: the title comes from the "#id Title" heading Mantis shows', async () => {
+    const page = await openMantis('tickets/8263?heading=Update%20the%20project%20count');
+    const r = await run(page, async () => {
+      T.root().querySelector('.fab-standup').click();
+      return T.root().querySelector('#mqs-ticket').value;
+    });
+    assert.equal(r, '#8263 Update the project count');
+    await page.close();
+  });
+
   test('Est Time: defaults to "-", sends what you type, resets after adding', async () => {
     const page = await openMantis('tickets/123');
     const r = await run(page, async () => {

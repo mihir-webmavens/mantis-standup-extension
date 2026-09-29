@@ -5,6 +5,7 @@
        n=<count>     number of EODs (odd ones filled)     allfilled=1  every EOD filled
        dup=<count>   same-day standups for ticket 123     prio=<level> ticket shows this priority
        err=1         EOD list fails (logged out)          saveerr=1    saving an EOD fails
+       heading=<text> the ticket shows "#<id> <text>" above it, like Mantis
        header=1      a Mantis-like header bar             ai=<mode>    MantisAI helper: reply (default) | slow | error | setup |
                                                                         lookup (reads a ticket) | approve (asks to resolve it) | noauth -->
 <html>
@@ -22,6 +23,8 @@
   <main><h1 style="padding:20px;margin:0">Mantis page</h1><p>Ticket body: the login page loops.</p></main>
   <script>
     const q = new URLSearchParams(location.search);
+    // Like Mantis: the number and the title in separate elements above the ticket.
+    if (q.get('heading')) document.querySelector('main').insertAdjacentHTML('afterbegin', `<div><div><h2><span style="color:#999">#${location.pathname.split('/').pop()}</span> ${q.get('heading')}</h2><p>Project · Created by anu</p></div></div>`);
     if (q.get('prio')) document.body.insertAdjacentHTML('beforeend', `<div><span>Priority</span><span>${q.get('prio')}</span></div>`);
 
     const pad = (n) => String(n).padStart(2, '0');

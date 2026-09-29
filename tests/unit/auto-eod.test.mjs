@@ -36,6 +36,8 @@ describe('EOD from commits: matching', () => {
   test('ticket numbers and mentions', () => {
     const { bg } = load();
     assert.deepEqual(plain(bg.ctx.ticketNumbers('#8386, 8390')), ['8386', '8390']);
+    assert.deepEqual(plain(bg.ctx.ticketNumbers('#8386 Update 2 pages')), ['8386'], 'numbers in the title do not count');
+    assert.deepEqual(plain(bg.ctx.ticketNumbers('Ticket 8386')), ['8386']);
     for (const m of ['Fix #8386', '8386: fix', 'MT-8386 fix', 'fix (8386)', 'Refs 8386.', 'body\nCloses #8386']) assert.ok(bg.ctx.mentions(m, '8386'), m);
     for (const m of ['Fix #18386', 'v8386', 'width 8386px', 'bump 1.8386', '83861']) assert.equal(bg.ctx.mentions(m, '8386'), false, m);
   });

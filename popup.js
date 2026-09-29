@@ -7,6 +7,14 @@ const status = document.querySelector('.status');
 const key = ButtonStyles.STORAGE_KEY;
 let statusTimer = null;
 
+// The ticket number: "#8263", "8263" and "#8263 Update the project count" are all 8263.
+const ticketKey = (t) => {
+  const text = String(t || '').trim();
+  return /^#?(\d+)(?:\s|$)/.exec(text)?.[1] ?? text.replace(/^#/, '');
+};
+// "8263" -> "#8263"; "#8263 Update the project count" stays as it is.
+const ticketLabel = (t) => (String(t).trim().startsWith('#') ? String(t).trim() : `#${String(t).trim()}`);
+
 // Each preview renders the real button stylesheet in its own shadow root,
 // so it looks exactly like the button on the page.
 function preview(styleId) {
@@ -238,7 +246,7 @@ function renderAutoEodResult(result, error) {
     const ul = el('ul');
     for (const m of result.matches) {
       const li = el('li');
-      li.append(el('strong', null, `#${m.ticket}`), ` · ${m.commits.join(' · ')}`);
+      li.append(el('strong', null, ticketLabel(m.ticket)), ` · ${m.commits.join(' · ')}`);
       ul.append(li);
     }
     if (result.matches.length) ae.result.append(ul);
@@ -247,12 +255,12 @@ function renderAutoEodResult(result, error) {
     const ul = el('ul');
     for (const f of result.filled) {
       const li = el('li');
-      li.append(el('strong', null, `#${f.ticket}`), ` · ${f.update}`);
+      li.append(el('strong', null, ticketLabel(f.ticket)), ` · ${f.update}`);
       ul.append(li);
     }
     if (result.filled.length) ae.result.append(ul);
   }
-  const problems = [...result.errors.map((e) => `#${e.ticket}: ${e.error}`), ...result.repoErrors.map((e) => `${e.repo}: ${e.error}`)];
+  const problems = [...result.errors.map((e) => `${ticketLabel(e.ticket)}: ${e.error}`), ...result.repoErrors.map((e) => `${e.repo}: ${e.error}`)];
   if (problems.length) {
     const ul = el('ul', 'ae-problems');
     for (const p of problems) ul.append(el('li', null, p));
@@ -594,7 +602,7 @@ function eodCard(eod) {
   const li = make('li', `eod ${isEditing ? 'editing' : eod.update ? 'filled' : 'pending'}`);
   const top = make('div', 'eod-top');
   const id = make('div', 'eod-id');
-  const ticket = eod.link ? make('a', '', `#${eod.ticket}`) : make('strong', '', `#${eod.ticket}`);
+  const ticket = eod.link ? make('a', '', ticketLabel(eod.ticket)) : make('strong', '', ticketLabel(eod.ticket));
   if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
   id.append(ticket);
   if (eod.priority) id.append(make('span', `prio ${eod.priority.toLowerCase()}`, eod.priority));
@@ -703,7 +711,6 @@ const su = {
   status: document.querySelector('.su-status'),
 };
 const SU_DEFAULTS = { est: '-', support: 'No', blockers: 'None' };
-const ticketKey = (t) => String(t || '').trim().replace(/^#/, '');
 
 function setSuStatus(message, isError = false) {
   su.status.textContent = message;
@@ -733,7 +740,8 @@ function localDate(d) {
 async function submitStandup() {
   if (su.submit.disabled) return;
   const payload = {
-    ticket: ticketKey(su.ticket.value),
+    // Just a number is sent as the number, as before; number and title are sent as typed.
+    ticket: /^#?\d+$/.test(su.ticket.value.trim()) ? ticketKey(su.ticket.value) : su.ticket.value.trim(),
     plannedAction: su.action.value.trim(),
     repoLink: su.link.value.trim(),
     priority: su.priority.value,
@@ -758,7 +766,7 @@ async function submitStandup() {
     su.est.value = SU_DEFAULTS.est;
     su.support.value = SU_DEFAULTS.support;
     su.blockers.value = SU_DEFAULTS.blockers;
-    setSuStatus(`✓ Standup added for #${payload.ticket} (${payload.priority}).`);
+    setSuStatus(`✓ Standup added for #${ticketKey(payload.ticket)} (${payload.priority}).`);
     loadEods(); // the new standup is also a new EOD entry
   } catch (err) {
     setSuStatus(err.message, true);
@@ -789,7 +797,7 @@ async function prefillFromTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const info = tab?.id ? await chrome.tabs.sendMessage(tab.id, { type: 'ticketInfo' }) : null;
     if (!info?.ticket) return;
-    if (!su.ticket.value) su.ticket.value = info.ticket;
+    if (!su.ticket.value) su.ticket.value = info.title ? `#${info.ticket} ${info.title}` : info.ticket;
     if (!su.link.value) su.link.value = info.link;
     if (info.priority) su.priority.value = info.priority;
     renderSuDuplicate();
