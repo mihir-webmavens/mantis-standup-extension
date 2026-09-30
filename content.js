@@ -8,6 +8,7 @@
   let host = null;
   let ui = null;
   let currentTicket = null;
+  let justAddedTicket = null; // hides the duplicate notice until the panel is reopened
   // Single source for both the EOD button count and the EOD list.
   let eodState = { status: 'idle', eods: [], error: null };
   let eodRequest = 0;
@@ -433,6 +434,7 @@
     closeEodPanel();
     MantisAI.close();
     refreshMeta();
+    justAddedTicket = null; // reopening shows the notice for the standup just added
     renderDuplicateNotice();
     ui.panel.hidden = false;
     ui.text.focus();
@@ -535,10 +537,11 @@
   }
 
   // Warns (without blocking) when this ticket already has a standup today,
-  // using the EOD list, which holds today's standups.
+  // using the EOD list, which holds today's standups. Not right after adding
+  // one: it waits until the panel is opened again (see justAddedTicket).
   function renderDuplicateNotice() {
     const today = localDate(new Date());
-    const same = eodState.status === 'ready' && currentTicket
+    const same = eodState.status === 'ready' && currentTicket && currentTicket !== justAddedTicket
       ? eodState.eods.filter((e) => eodTicketId(e) === currentTicket && isToday(e.createdAt, today))
       : [];
     ui.dupNote.hidden = !same.length;
@@ -710,6 +713,8 @@
         ticketTouched = false;
         refreshMeta(); // back to the ticket's own priority and title for the next standup
         showStatus('ok', `✓ Standup added for #${ticket} (${priority}).`);
+        justAddedTicket = ticket;
+        renderDuplicateNotice();
         document.dispatchEvent(new CustomEvent('msq-done', { detail: 'standup' })); // playground.js may celebrate
         loadEods(); // the new standup is also a new EOD entry
       } else {

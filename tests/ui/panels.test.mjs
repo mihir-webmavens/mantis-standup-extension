@@ -234,6 +234,23 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
     assert.equal(await notice('n=2&dup=2'), '2 standups already added today for #123. Adding again creates another entry.');
   });
 
+  test('the duplicate warning waits until the panel is reopened after adding a standup', async () => {
+    const page = await openMantis('tickets/123?n=2&dup=1');
+    const r = await run(page, async () => {
+      const root = T.root(), note = () => root.querySelector('.dup-note'), out = {};
+      root.querySelector('.fab-standup').click();
+      root.querySelector('#mqs-action').value = 'Fix login';
+      T.key('Enter', { ctrlKey: true }); await T.wait(300);
+      out.afterAdd = note().hidden;
+      T.key('Escape');
+      root.querySelector('.fab-standup').click();
+      out.afterReopen = note().hidden;
+      return out;
+    });
+    assert.deepEqual(r, { afterAdd: true, afterReopen: false });
+    await page.close();
+  });
+
   test('EOD button counts only EODs still to fill in', async () => {
     const button = async (query) => {
       const page = await openMantis(`tickets/123?${query}`);

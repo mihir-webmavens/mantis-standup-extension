@@ -719,10 +719,12 @@ function setSuStatus(message, isError = false) {
 }
 
 // Warns (without blocking) when this ticket already has a standup today.
+// Not right after adding one: it waits until the popup is opened again.
+let suJustAdded = null;
 function renderSuDuplicate() {
   const ticket = ticketKey(su.ticket.value);
   const today = localDate(new Date());
-  const same = ticket && eods.status === 'ready'
+  const same = ticket && ticket !== suJustAdded && eods.status === 'ready'
     ? eods.items.filter((e) => ticketKey(e.ticket) === ticket && (!/^\d{4}-\d{2}-\d{2}/.test(e.createdAt || '') || e.createdAt.startsWith(today)))
     : [];
   su.dup.hidden = !same.length;
@@ -767,6 +769,8 @@ async function submitStandup() {
     su.support.value = SU_DEFAULTS.support;
     su.blockers.value = SU_DEFAULTS.blockers;
     setSuStatus(`✓ Standup added for #${ticketKey(payload.ticket)} (${payload.priority}).`);
+    suJustAdded = ticketKey(payload.ticket);
+    renderSuDuplicate();
     loadEods(); // the new standup is also a new EOD entry
   } catch (err) {
     setSuStatus(err.message, true);
@@ -787,7 +791,10 @@ su.form.addEventListener('keydown', (e) => {
   }
 });
 for (const el of [su.ticket, su.action, su.link]) el.addEventListener('input', () => el.removeAttribute('aria-invalid'));
-su.ticket.addEventListener('input', renderSuDuplicate);
+su.ticket.addEventListener('input', () => {
+  suJustAdded = null; // a newly typed ticket gets its notice
+  renderSuDuplicate();
+});
 document.addEventListener('eods-changed', renderSuDuplicate);
 
 // Pre-fill from a Mantis ticket page (its content script answers); other sites
