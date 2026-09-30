@@ -282,6 +282,22 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
     assert.deepEqual(await buttons('dashboard'), { standup: false, eod: true, scrollHint: false, standupShortcut: { handled: false }, eodShortcut: { handled: true }, eodOpen: true });
   });
 
+  test('opening a ticket page shows + Standup, also after moving there from another page', async () => {
+    const shown = async (page) => run(page, async () => {
+      const scroller = T.root().querySelector('.fab-scroll');
+      return scroller.scrollTop < 22 ? 'standup' : 'eod';
+    });
+    const page = await openMantis('tickets/123');
+    assert.equal(await shown(page), 'standup');
+    // Scrolled to EOD on this ticket: stays on EOD.
+    await run(page, async () => { T.root().querySelector('.fab-scroll').scrollTop = 44; await T.wait(1200); });
+    assert.equal(await shown(page), 'eod');
+    // Away from tickets and back (Livewire changes the URL without a reload).
+    await run(page, async () => { history.pushState({}, '', '/dashboard'); await T.wait(1200); history.pushState({}, '', '/tickets/456'); await T.wait(1200); });
+    assert.equal(await shown(page), 'standup');
+    await page.close();
+  });
+
   test('the login link in errors is clickable', async () => {
     const page = await openMantis('tickets/123?err=1');
     const href = await run(page, async () => {

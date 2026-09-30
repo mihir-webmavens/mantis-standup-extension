@@ -741,6 +741,9 @@
       ticketTouched = false;
       ui.status.hidden = true;
       renderDuplicateNotice();
+      // A new ticket page starts on + Standup. Otherwise the scroller keeps EOD
+      // in view when + Standup reappears above it.
+      if (id) ui.fabs.querySelector('.fab-scroll').scrollTop = 0;
       if (id && !ui.panel.hidden) refreshMeta();
       if (!id) closePanel();
     } else if (id && !ticketTouched && !ui.panel.hidden) {
