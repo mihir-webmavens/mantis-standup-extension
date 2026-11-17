@@ -406,3 +406,8 @@ html[data-look="neon"] { --grad: linear-gradient(120deg, #0891b2, #c026d3); --ac
 .play-secrets:empty { display: none; }
 .play:not(.on) :is(.play-stats, .play-secrets) { opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .play::before, .play-stats b.bump { animation: none; } }
+
+/* Ticket digest + time tracker */
+.digest .rem-opts + .rem-opts { margin-top: 6px; padding-top: 0; border-top: 0; }
+#dg-stale { width: 52px; }
+.digest .ae-actions .link, .time-tracker .ae-actions .link { margin-left: 0; }

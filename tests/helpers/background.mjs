@@ -79,12 +79,17 @@ function fakePort(name) {
  * plays the helper (reply(msg) sends to the extension); `hostError` makes connecting fail
  * the way Chrome reports it (e.g. 'Specified native messaging host not found.').
  */
-export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError } = {}) {
+export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError, tracking = false, browser = {} } = {}) {
   const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, local: {}, nativePorts: [] };
+  // Time tracker: `tracking: true` grants the tabs + idle permissions; `browser` is what
+  // Chrome reports (the focused tab, whether a Chrome window has focus, the idle state).
+  state.browser = { tab: null, focused: true, idle: 'active', ...browser };
   const events = {
     message: event(), installed: event(), startup: event(), alarm: event(), storage: event(),
     permAdded: event(), command: event(), noteClicked: event(), noteButton: event(), connect: event(),
+    tabActivated: event(), tabUpdated: event(), focusChanged: event(), idleChanged: event(),
   };
+  const pick = (store, keys) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map((k) => [k, store[k]]));
   const notificationsApi = {
     create: (id, options) => { state.notes[id] = options; },
     clear: (id) => { delete state.notes[id]; },
@@ -126,16 +131,24 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
     },
     storage: {
       sync: { get: async (key) => ({ [key]: storage[key] }) },
-      session: { set: async (items) => { Object.assign(state.session, items); } },
-      local: { get: async (key) => ({ [key]: state.local[key] }), set: async (items) => { Object.assign(state.local, plain(items)); } },
+      session: {
+        get: async (keys) => plain(pick(state.session, keys)),
+        set: async (items) => { Object.assign(state.session, plain(items)); },
+        remove: async (key) => { delete state.session[key]; },
+      },
+      local: { get: async (keys) => plain(pick(state.local, keys)), set: async (items) => { Object.assign(state.local, plain(items)); } },
       onChanged: events.storage,
     },
     permissions: {
       onAdded: events.permAdded,
-      contains: async ({ permissions }) => permissions.every((p) => (p === 'nativeMessaging' ? nativeMessaging : p === 'notifications' ? notifications : false)),
+      contains: async ({ permissions }) => permissions.every((p) => (p === 'nativeMessaging' ? nativeMessaging : p === 'notifications' ? notifications
+        : p === 'tabs' || p === 'idle' ? tracking : false)),
     },
     tabs: {
       create: ({ url }) => { state.tabs.push(url); },
+      query: async () => (state.browser.tab ? [{ id: 1, active: true, ...state.browser.tab }] : []),
+      onActivated: events.tabActivated,
+      onUpdated: events.tabUpdated,
       sendMessage: async (tabId, msg) => {
         state.tabMessages.push({ tabId, ...msg });
         if (!tabMessage) throw new Error('Could not establish connection. Receiving end does not exist.');
@@ -143,9 +156,18 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
       },
     },
     commands: { onCommand: events.command },
+    windows: {
+      getLastFocused: async () => ({ id: 7, focused: state.browser.focused }),
+      onFocusChanged: events.focusChanged,
+    },
+    idle: tracking ? {
+      queryState: async () => state.browser.idle,
+      setDetectionInterval: (s) => { state.idleInterval = s; },
+      onStateChanged: events.idleChanged,
+    } : undefined,
     notifications: notifications ? notificationsApi : undefined,
   };
-  const context = vm.createContext({ chrome, fetch: server.fetch, URL, URLSearchParams, console, setTimeout, clearTimeout });
+  const context = vm.createContext({ chrome, fetch: server.fetch, URL, URLSearchParams, console, setTimeout, clearTimeout, Date });
   vm.runInContext(BACKGROUND, context, { filename: 'background.js' });
 
   const bg = {

@@ -172,6 +172,49 @@
         <p class="sub ae-note">Uses the MantisAI helper below: git reads your commits (by the repo's <code>user.email</code>), the Claude CLI writes each EOD. Chrome must be open at that time.</p>
       </section>
 
+      <section class="reminder digest" id="digest" aria-labelledby="dg-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="dg-title">Ticket digest</h2>
+            <p class="sub">A daily notification with your active tickets, flagging the ones with no update for a while.</p>
+          </div>
+          <label class="switch" title="Turn the daily ticket digest on or off">
+            <input type="checkbox" id="dg-enabled" role="switch" aria-labelledby="dg-title">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="rem-opts">
+          <label class="field">At <input type="time" id="dg-time" value="10:00" required></label>
+          <label class="check"><input type="checkbox" id="dg-weekdays" checked> Weekdays only</label>
+        </div>
+        <div class="rem-opts">
+          <label class="field">Stale after <input type="number" id="dg-stale" min="1" max="60" value="3" required> days without an update</label>
+        </div>
+        <div class="ae-actions">
+          <button type="button" class="pill" id="dg-open">Open Insights</button>
+          <button type="button" class="link" id="dg-preview">Preview</button>
+        </div>
+        <p class="sub ae-note">Uses the MantisAI helper below for read-only lookups. Chrome must be open at that time.</p>
+      </section>
+
+      <section class="reminder time-tracker" id="time-tracker" aria-labelledby="tt-title">
+        <div class="rem-head">
+          <div>
+            <h2 id="tt-title">Time tracker</h2>
+            <p class="sub">Counts the time Chrome is focused on each Mantis ticket and site. Pauses when you are idle or in another app.</p>
+          </div>
+          <label class="switch" title="Turn the time tracker on or off">
+            <input type="checkbox" id="tt-enabled" role="switch" aria-labelledby="tt-title">
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="ae-actions">
+          <button type="button" class="pill" id="tt-open">Open Insights</button>
+          <span class="sub ae-last" id="tt-today"></span>
+        </div>
+        <p class="sub ae-note">Other sites are saved by name only (e.g. github.com), never full addresses. Everything stays on this computer for 90 days. Chrome asks to let the extension see your tabs.</p>
+      </section>
+
       <section class="shortcuts" aria-labelledby="keys-title">
         <div class="keys-head">
           <div>

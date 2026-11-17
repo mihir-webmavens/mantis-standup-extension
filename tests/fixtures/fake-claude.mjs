@@ -9,6 +9,9 @@
 //   tool             first calls the tool in $FAKE_CLAUDE_TOOL ({ name, input }) through the
 //                    PreToolUse hook from --settings, exactly as Claude Code would, then replies
 //                    "ran" or "blocked: <reason>"
+//   calls            makes every call in $FAKE_CLAUDE_CALLS ([{ name, input, result }]) through the
+//                    hook; an allowed call gets `result` as its MCP text result. Decisions go to
+//                    $FAKE_CLAUDE_LOG.hook as a list
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 
@@ -53,6 +56,27 @@ process.stdin.on('end', () => {
     out({ type: 'stream_event', event: { type: 'message_start' }, session_id: session });
     out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }, session_id: session });
     out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: session });
+    return;
+  }
+  if (mode === 'calls') {
+    const calls = JSON.parse(process.env.FAKE_CLAUDE_CALLS || '[]');
+    const settings = JSON.parse(fs.readFileSync(args[args.indexOf('--settings') + 1], 'utf8'));
+    const { command } = settings.hooks.PreToolUse[0].hooks[0];
+    const decisions = [];
+    calls.forEach(({ name, input, result }, i) => {
+      const id = `toolu_${i + 1}`;
+      out({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] }, session_id: session });
+      const hook = spawnSync('sh', ['-c', command], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: name, tool_input: input, tool_use_id: id }) });
+      const decision = JSON.parse(hook.stdout.toString() || '{}').hookSpecificOutput || {};
+      decisions.push(decision);
+      const ran = decision.permissionDecision === 'allow';
+      out({
+        type: 'user', session_id: session,
+        message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: !ran, content: ran ? [{ type: 'text', text: JSON.stringify(result) }] : decision.permissionDecisionReason }] },
+      });
+    });
+    fs.writeFileSync(`${process.env.FAKE_CLAUDE_LOG}.hook`, JSON.stringify(decisions));
+    out({ type: 'result', subtype: 'success', is_error: false, result: 'done', session_id: session });
     return;
   }
   if (mode === 'hang') {

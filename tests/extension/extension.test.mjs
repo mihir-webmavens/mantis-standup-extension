@@ -13,7 +13,7 @@ import { findExtensionChromium, launch, sleep } from '../helpers/browser.mjs';
 import { fakeStandupServer } from '../helpers/background.mjs';
 
 const REPO = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'themes.js', 'mantis-theme.js', 'playground-events.js', 'playground.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'preview.html', 'preview.css', 'preview.js', 'themes.html', 'themes.css', 'themes-gallery.js', 'icons'];
+const EXTENSION_FILES = ['manifest.json', 'background.js', 'content.js', 'button-styles.js', 'mantis-ai.js', 'mantis-header.css', 'mantis-header.js', 'header-layout.js', 'themes.js', 'mantis-theme.js', 'playground-events.js', 'playground.js', 'native-host', 'popup.html', 'popup.js', 'popup.css', 'preview.html', 'preview.css', 'preview.js', 'themes.html', 'themes.css', 'themes-gallery.js', 'insights.html', 'insights.css', 'insights.js', 'icons'];
 const chromium = findExtensionChromium();
 const MANTIS_PAGE = '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;height:100vh"><h1>Mantis</h1><div><span>Priority</span><span>High</span></div></body></html>';
 
@@ -565,4 +565,63 @@ describe('EOD reminder settings (notifications granted)', { skip: !chromium && '
     assert.equal((await state()).alarm, null);
     await popup.close();
   });
+
+  test('Settings → Ticket digest and Time tracker: switches save and schedule', async () => {
+    const popup = await ext.browser.open(ext.popupUrl, { width: 400, height: 580 });
+    await popup.click(`document.querySelector('#tab-settings')`);
+    await popup.click(`document.querySelector('#dg-enabled')`);
+    await popup.until(`document.querySelector('#digest').classList.contains('on')`, { message: 'digest did not turn on' });
+    await popup.eval(`(el => { el.value = '7'; el.dispatchEvent(new Event('change')); })(document.querySelector('#dg-stale'))`);
+    await popup.until(`chrome.storage.sync.get('ticketDigest').then((s) => s.ticketDigest?.staleDays === 7)`);
+    assert.deepEqual(await popup.eval(`chrome.storage.sync.get('ticketDigest').then((s) => s.ticketDigest)`), { enabled: true, time: '10:00', weekdaysOnly: true, staleDays: 7 });
+    await popup.until(`chrome.alarms.get('ticket-digest').then(Boolean)`, { message: 'digest alarm not scheduled' });
+
+    await popup.click(`document.querySelector('#tt-enabled')`);
+    await popup.until(`document.querySelector('#time-tracker').classList.contains('on')`, { message: 'tracker did not turn on' });
+    await popup.until(`chrome.alarms.get('time-tracker').then((a) => a?.periodInMinutes === 1)`, { message: 'tracker alarm not scheduled' });
+    assert.equal(await popup.eval('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
+
+    await popup.click(`document.querySelector('#tt-enabled')`);
+    await popup.until(`chrome.alarms.get('time-tracker').then((a) => !a)`, { message: 'tracker alarm not cleared' });
+    await popup.click(`document.querySelector('#dg-enabled')`);
+    await popup.until(`chrome.alarms.get('ticket-digest').then((a) => !a)`, { message: 'digest alarm not cleared' });
+    await popup.close();
+  });
+
+  test('Insights page: digest with stale tickets and the week of tracked time', async () => {
+    const now = Date.now();
+    const day = (offset) => { const d = new Date(now - offset * 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const t = (id, idleDays, extra = {}) => ({ id, title: `Ticket ${id}`, project: 'App', status: 'in_progress', priority: null, updatedAt: now - idleDays * 864e5, idleDays, stale: idleDays >= 3, ...extra });
+    const digest = { fetchedAt: now, user: { id: 1 }, staleDays: 3, stale: 2, active: [t(9321, 29), t(9436, 21, { priority: 'high' }), t(9800, 0, { status: 'assigned' })], testing: [t(9746, 1)] };
+    const timeLog = { [day(0)]: { tickets: { 9436: 3_600_000, 9800: 900_000 }, sites: { 'projects.webmavens.dev': 600_000, 'github.com': 1_200_000 } } };
+    const page = await ext.browser.open(`chrome-extension://${ext.id}/insights.html`, { width: 1000, height: 1100 });
+    await page.eval(`chrome.storage.local.set(${JSON.stringify({ ticketDigestLast: digest, timeLog, timeTicketTitles: { 9436: 'Create App' } })})`);
+    await page.until(`document.querySelectorAll('#digest-active .ticket').length === 3`, { message: 'digest did not render' });
+    const view = await page.eval(`JSON.stringify({
+      stale: [...document.querySelectorAll('#digest-active .ticket.stale .num')].map((a) => a.textContent),
+      stats: [...document.querySelectorAll('#digest-stats strong')].map((s) => s.textContent),
+      testing: document.querySelector('#digest-testing summary').textContent,
+      thisWeek: document.querySelector('#digest-active .ticket:nth-child(2) .meta').textContent,
+      tickets: [...document.querySelectorAll('#time-tickets li')].map((li) => li.textContent),
+      sites: [...document.querySelectorAll('#time-sites li')].map((li) => li.textContent),
+      link: document.querySelector('#time-tickets a').href,
+    })`).then(JSON.parse);
+    assert.deepEqual(view.stale, ['#9321', '#9436']);
+    assert.deepEqual(view.stats, ['3', '2', '1']);
+    assert.equal(view.testing, '1 ticket waiting for testing');
+    assert.match(view.thisWeek, /1h 00m this week/);
+    assert.deepEqual(view.tickets, ['#9436 Create App1h 00m', '#9800 Ticket 980015m']);
+    assert.deepEqual(view.sites, ['github.com20m', 'projects.webmavens.dev (lists, dashboard)10m']);
+    assert.equal(view.link, 'https://projects.webmavens.dev/tickets/9436');
+    assert.equal(await page.eval('document.documentElement.scrollWidth - document.documentElement.clientWidth'), 0);
+    if (process.env.INSIGHTS_SCREENSHOTS) {
+      await page.screenshot(path.join(process.env.INSIGHTS_SCREENSHOTS, 'insights-light.png'));
+      await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+      await page.screenshot(path.join(process.env.INSIGHTS_SCREENSHOTS, 'insights-dark.png'));
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1400, deviceScaleFactor: 1, mobile: false });
+      await page.screenshot(path.join(process.env.INSIGHTS_SCREENSHOTS, 'insights-narrow.png'));
+    }
+    await page.close();
+  });
+
 });

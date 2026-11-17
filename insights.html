@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mantis Insights</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="insights.css">
+</head>
+<body>
+  <header class="top">
+    <img src="icons/icon48.png" alt="" width="36" height="36">
+    <div>
+      <h1>Insights</h1>
+      <p>Your open Mantis tickets and where your browser time went.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="digest" aria-labelledby="digest-title">
+      <div class="card-head">
+        <div>
+          <h2 id="digest-title">Ticket digest</h2>
+          <p class="sub" id="digest-meta">Not fetched yet.</p>
+        </div>
+        <button type="button" class="pill" id="digest-refresh">Refresh</button>
+      </div>
+      <div class="stats" id="digest-stats" hidden></div>
+      <div class="notice" id="digest-notice" role="status" hidden></div>
+      <ul class="ticket-list" id="digest-active" aria-label="Active tickets"></ul>
+      <details class="testing" id="digest-testing" hidden>
+        <summary></summary>
+        <ul class="ticket-list"></ul>
+      </details>
+    </section>
+
+    <section class="card" id="time" aria-labelledby="time-title">
+      <div class="card-head">
+        <div>
+          <h2 id="time-title">Time</h2>
+          <p class="sub" id="time-meta">Time Chrome was focused on each tab. Sites by name only; kept on this computer.</p>
+        </div>
+        <div class="week-nav">
+          <button type="button" class="pill icon" id="week-prev" aria-label="Previous week">‹</button>
+          <span id="week-label"></span>
+          <button type="button" class="pill icon" id="week-next" aria-label="Next week">›</button>
+        </div>
+      </div>
+      <div class="notice" id="time-notice" hidden></div>
+      <div class="stats" id="time-stats"></div>
+      <div class="chart" id="time-chart" role="group" aria-label="Time per day. Click a day to see only that day."></div>
+      <div class="legend">
+        <span><i class="sw tickets"></i>Mantis tickets</span>
+        <span><i class="sw mantis"></i>Other Mantis pages</span>
+        <span><i class="sw sites"></i>Other sites</span>
+      </div>
+      <div class="lists">
+        <div>
+          <h3 id="tickets-head">Tickets</h3>
+          <ol class="rank" id="time-tickets"></ol>
+        </div>
+        <div>
+          <h3 id="sites-head">Sites</h3>
+          <ol class="rank" id="time-sites"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="insights.js"></script>
+</body>
+</html>

@@ -14,6 +14,8 @@
 //   out  { type: 'commits', commits: [{ repo, hash, date, message }], errors: [{ repo, error }] }
 //   in   { type: 'summarize', prompt, system, model? }
 //   out  { type: 'summary', text }
+//   in   { type: 'tickets', model? }   (ticket digest: the user's open tickets)
+//   out  { type: 'tickets', user: { id, name }, projects: [{ id, name }], tickets: [ticket list items] }
 //   out  { type: 'error', code, error } at any point
 // When Chrome closes the port, stdin ends: the running claude is stopped and we exit.
 //
@@ -27,6 +29,11 @@
 // For EODs written from commits, `commits` runs read-only `git log` in the folders
 // the user listed (their own commits only, by the repo's user.email) and
 // `summarize` runs claude with no tools and no MCP servers at all.
+//
+// For the ticket digest, `tickets` runs claude with only the Mantis MCP server and a
+// gate (--digest-hook) that allows nothing but whoami, lookups list_projects and
+// tickets list. The tickets are read from the tool results themselves, never from
+// Claude's answer, and only a complete set (every page of every status) is returned.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,7 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HOST_VERSION = '1.2.0';
+const HOST_VERSION = '1.3.0';
 const HOST_FILE = fileURLToPath(import.meta.url);
 const CLAUDE = process.env.MANTIS_AI_CLAUDE || 'claude';
 const GIT = process.env.MANTIS_AI_GIT || 'git';
@@ -71,6 +78,7 @@ export function isReadOnly(toolName, input) {
 // Run directly: by Chrome as the helper, or by claude as the gate. Imported (tests): neither.
 const direct = Boolean(process.argv[1]) && fs.realpathSync(process.argv[1]) === fs.realpathSync(HOST_FILE);
 if (direct && process.argv[2] === '--approve-hook') approveHook(process.argv[3]);
+else if (direct && process.argv[2] === '--digest-hook') digestHook();
 else if (direct) main();
 
 // ---------- the gate (a PreToolUse hook, run by claude) ----------
@@ -168,6 +176,7 @@ function handle(msg) {
   if (msg?.type === 'approve') return answerApproval?.(msg.id, msg.allow === true);
   if (msg?.type === 'commits') return commits(msg);
   if (msg?.type === 'summarize') return summarize(msg);
+  if (msg?.type === 'tickets') return tickets(msg);
   fail('bad-request', `Unknown request "${msg?.type}".`);
 }
 
@@ -498,6 +507,181 @@ function summarize({ prompt, system, model }) {
   });
 }
 
+// ---------- ticket digest ----------
+
+export const DIGEST_STATUSES = ['new', 'assigned', 'in_progress'];
+
+// The digest's whole tool set: anything else is refused by --digest-hook.
+export function isDigestCall(toolName, input) {
+  const tool = String(toolName).startsWith(MANTIS_PREFIX) ? toolName.slice(MANTIS_PREFIX.length) : '';
+  if (tool === 'whoami') return true;
+  if (tool === 'lookups') return input?.action === 'list_projects';
+  if (tool === 'tickets') return input?.action === 'list';
+  return false;
+}
+
+function digestHook() {
+  let raw = '';
+  process.stdin.on('data', (d) => { raw += d; });
+  process.stdin.on('end', () => {
+    let ev = {};
+    try {
+      ev = JSON.parse(raw);
+    } catch { /* refused below */ }
+    const allow = isDigestCall(String(ev.tool_name || ''), ev.tool_input);
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: allow ? 'allow' : 'deny',
+        permissionDecisionReason: allow ? 'Read-only lookup for the ticket digest.' : 'Only whoami, lookups list_projects and tickets list are available here.',
+      },
+    }));
+    process.exit(0);
+  });
+}
+
+const DIGEST_SYSTEM = [
+  'You fetch data from Mantis for a ticket digest. You only make tool calls; your text answer is ignored.',
+  '1. Call whoami.',
+  '2. Call lookups with action list_projects.',
+  `3. For each status_key in ${DIGEST_STATUSES.join(', ')}: call tickets with action list, that status_key, assignee_id set to the user id from whoami and limit 100. While a result has a next_cursor, call it again with the same arguments plus cursor set to that next_cursor.`,
+  'Make no other calls. When every page is fetched, answer "done".',
+].join('\n');
+
+// MCP tool results arrive as a string or as text blocks.
+function toolResultJson(block) {
+  const text = typeof block.content === 'string'
+    ? block.content
+    : (Array.isArray(block.content) ? block.content : []).filter((c) => c?.type === 'text').map((c) => c.text).join('');
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+// From the lookups Claude made: the user, their projects and every page of their open tickets.
+export function collectDigest(calls) {
+  const ok = calls.filter((c) => c.result && !c.isError);
+  const who = ok.find((c) => c.tool === 'whoami')?.result;
+  if (!Number.isInteger(who?.user_id)) return { error: 'Could not find out who you are in Mantis (whoami).' };
+
+  const projectsResult = ok.find((c) => c.tool === 'lookups' && c.input?.action === 'list_projects')?.result;
+  const projects = (Array.isArray(projectsResult?.data) ? projectsResult.data : []).map((p) => ({ id: p.id, name: String(p.name ?? '') }));
+
+  const tickets = new Map();
+  const missing = [];
+  for (const status of DIGEST_STATUSES) {
+    const pages = ok.filter((c) => c.tool === 'tickets' && c.input?.action === 'list' && c.input.status_key === status
+      && c.input.assignee_id === who.user_id && !c.input.q && !c.input.project_id && !c.input.label_id && Array.isArray(c.result.items));
+    const asked = new Set(pages.map((c) => c.input.cursor || ''));
+    const complete = asked.has('') && pages.every((c) => !c.result.next_cursor || asked.has(c.result.next_cursor));
+    if (!complete) missing.push(status);
+    for (const page of pages) {
+      for (const t of page.result.items) if (Number.isInteger(t?.id) && t.status_key === status) tickets.set(t.id, t);
+    }
+  }
+  if (missing.length) return { error: `Not every page of your tickets was fetched (${missing.join(', ')}). Try again.` };
+  return { user: { id: who.user_id, name: String(who.name ?? '') }, projects, tickets: [...tickets.values()] };
+}
+
+function tickets({ model }) {
+  fs.mkdirSync(WORKSPACE, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-'));
+  const file = (name, content) => {
+    const p = path.join(tmp, name);
+    fs.writeFileSync(p, content);
+    return p;
+  };
+  const hook = `${JSON.stringify(process.execPath)} ${JSON.stringify(HOST_FILE)} --digest-hook`;
+  const args = [
+    '-p', '--output-format', 'stream-json', '--verbose', '--no-session-persistence',
+    '--tools', '', '--setting-sources', '', '--disable-slash-commands',
+    '--strict-mcp-config', '--mcp-config', file('mcp.json', JSON.stringify({ mcpServers: { [MANTIS_SERVER]: { type: 'http', url: MANTIS_URL } } })),
+    '--settings', file('settings.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: hook, timeout: 30 }] }] } })),
+    '--system-prompt-file', file('system.txt', DIGEST_SYSTEM),
+  ];
+  if (MODELS.has(model)) args.push('--model', model);
+
+  const uses = new Map(); // tool_use id -> { tool, input }
+  const calls = [];
+  let mantis = 'missing';
+  let finished = false;
+  let stderr = '';
+  let lineBuf = '';
+  let child;
+  const finish = (msg) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    send(msg);
+  };
+  const timer = setTimeout(() => {
+    finish({ type: 'error', code: 'timeout', error: 'Fetching your tickets took too long. Try again.' });
+    child?.kill('SIGTERM');
+  }, IDLE_TIMEOUT_MS);
+
+  const onEvent = (line) => {
+    let ev;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (ev.type === 'system' && ev.subtype === 'init') {
+      mantis = (ev.mcp_servers || []).find((s) => s.name === MANTIS_SERVER)?.status || 'missing';
+    } else if (ev.type === 'assistant') {
+      for (const block of ev.message?.content || []) {
+        if (block.type === 'tool_use') uses.set(block.id, { tool: String(block.name).replace(MANTIS_PREFIX, ''), input: block.input });
+      }
+    } else if (ev.type === 'user') {
+      for (const block of Array.isArray(ev.message?.content) ? ev.message.content : []) {
+        const use = block.type === 'tool_result' && uses.get(block.tool_use_id);
+        if (use) calls.push({ ...use, isError: Boolean(block.is_error), result: toolResultJson(block) });
+      }
+    } else if (ev.type === 'result') {
+      if (ev.is_error) return finish({ type: 'error', ...classify([...(ev.errors || []), ev.result].filter(Boolean).join(' ') || stderr) });
+      if (mantis !== 'connected' && !calls.length) {
+        return finish({ type: 'error', code: 'mantis', error: 'The Claude CLI could not connect to Mantis. Run `claude` in a terminal and check /mcp for webmavens-projects.' });
+      }
+      const digest = collectDigest(calls);
+      finish(digest.error ? { type: 'error', code: 'incomplete', error: digest.error } : { type: 'tickets', ...digest });
+    }
+  };
+
+  try {
+    child = spawn(CLAUDE, args, { cwd: WORKSPACE, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch (err) {
+    return finish({ type: 'error', code: 'claude-missing', error: claudeMissing(err) });
+  }
+  children.add(child);
+  child.stdin.on('error', () => {});
+  child.stdin.end('Fetch the data for my ticket digest.');
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    lineBuf += chunk;
+    let nl;
+    while ((nl = lineBuf.indexOf('\n')) >= 0) {
+      const line = lineBuf.slice(0, nl).trim();
+      lineBuf = lineBuf.slice(nl + 1);
+      if (line) onEvent(line);
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
+  child.on('error', (err) => {
+    children.delete(child);
+    finish({ type: 'error', code: 'claude-missing', error: claudeMissing(err) });
+  });
+  child.on('close', (code, signal) => {
+    children.delete(child);
+    if (lineBuf.trim()) onEvent(lineBuf.trim());
+    if (signal) return finish({ type: 'error', code: 'stopped', error: 'Stopped.' });
+    finish({ type: 'error', ...classify(stderr || `claude exited with code ${code}.`) });
+  });
+}
+
 // Turns CLI error text into a code the extension can explain.
 function classify(detail, sessionId) {
   const text = String(detail).trim().slice(0, 600);
@@ -507,7 +691,7 @@ function classify(detail, sessionId) {
   if (/not logged in|please run \/login|invalid api key/i.test(text)) {
     return { code: 'auth', error: 'The Claude CLI is not logged in. Run `claude` in a terminal, log in, then try again.' };
   }
-  if (/rate limit|usage limit|limit reached|overloaded/i.test(text)) {
+  if (/rate limit|usage limit|limit reached|overloaded|out of usage credits/i.test(text)) {
     return { code: 'limit', error: `Claude is unavailable right now: ${text}` };
   }
   return { code: 'claude-error', error: text || 'Claude stopped without answering.' };

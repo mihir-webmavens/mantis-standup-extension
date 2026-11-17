@@ -18,6 +18,8 @@ const HANDLERS = {
   openMantisAiSetup: () => openMantisAiSetup(),
   previewAutoEod: () => runAutoEod({ dryRun: true }),
   runAutoEod: () => runAutoEod(),
+  runDigest: () => runDigest(),
+  previewDigestNotification: () => previewDigestNotification(),
 };
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -804,6 +806,293 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 chrome.permissions.onAdded.addListener(wireAutoEodNotifications);
 wireAutoEodNotifications();
+
+// ---------- ticket digest ----------
+// Your open Mantis tickets, fetched by the MantisAI helper (read-only lookups; the
+// tickets come from the lookups' own results). "Active" follows the team's rule:
+// new, assigned or in_progress, without the "Completed - Needs Testing" or
+// "[Testing done]" label. A ticket is stale when it has had no update for the set
+// number of days. Shown on the Insights page; once a day (optional) a notification.
+
+const DIGEST_KEY = 'ticketDigest';
+const DIGEST_LAST_KEY = 'ticketDigestLast';
+const DIGEST_ALARM = 'ticket-digest';
+const DIGEST_NOTIFY_ID = 'ticket-digest';
+const DIGEST_DEFAULTS = { enabled: false, time: '10:00', weekdaysOnly: true, staleDays: 3 };
+const DIGEST_MODEL = 'haiku'; // only drives the lookups; it writes nothing that is shown
+const TESTING_LABEL_RE = /^\s*(completed\s*-\s*needs\s*testing|\[testing done\])\s*$/i;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const INSIGHTS_PAGE = 'insights.html';
+
+async function getDigestSettings() {
+  const stored = (await chrome.storage.sync.get(DIGEST_KEY))[DIGEST_KEY];
+  const settings = { ...DIGEST_DEFAULTS, ...stored };
+  const days = Math.round(Number(settings.staleDays));
+  settings.staleDays = Number.isFinite(days) && days >= 1 ? Math.min(days, 60) : DIGEST_DEFAULTS.staleDays;
+  return settings;
+}
+
+let schedulingDigest = Promise.resolve();
+function scheduleDigest() {
+  const run = async () => {
+    const settings = await getDigestSettings();
+    if (settings.enabled) await chrome.alarms.create(DIGEST_ALARM, { when: nextReminderTime(settings) });
+    else await chrome.alarms.clear(DIGEST_ALARM);
+  };
+  schedulingDigest = schedulingDigest.then(run, run);
+  return schedulingDigest;
+}
+
+const isWaitingForTesting = (ticket) => (ticket.labels || []).some((l) => TESTING_LABEL_RE.test(String(l?.name ?? '')));
+
+// Turns the helper's raw tickets into the digest; `now` is injectable for tests.
+function buildDigest({ user, projects = [], tickets = [] }, staleDays, now = Date.now()) {
+  const projectNames = new Map(projects.map((p) => [p.id, p.name]));
+  const shape = (t) => {
+    const updated = Date.parse(t.updated_at || t.created_at);
+    const idleDays = Number.isFinite(updated) ? Math.max(0, Math.floor((now - updated) / DAY_MS)) : null;
+    return {
+      id: t.id,
+      title: String(t.title ?? '').trim(),
+      project: projectNames.get(t.project_id) || '',
+      status: t.status_key,
+      priority: t.priority || null,
+      updatedAt: Number.isFinite(updated) ? updated : null,
+      idleDays,
+      stale: idleDays != null && idleDays >= staleDays,
+    };
+  };
+  const byIdle = (a, b) => (b.idleDays ?? -1) - (a.idleDays ?? -1) || a.id - b.id;
+  const active = tickets.filter((t) => !isWaitingForTesting(t)).map(shape).sort(byIdle);
+  const testing = tickets.filter(isWaitingForTesting).map(shape).sort(byIdle);
+  return { fetchedAt: now, user, staleDays, active, testing, stale: active.filter((t) => t.stale).length };
+}
+
+let digestRunning = null;
+function runDigest() {
+  if (!digestRunning) digestRunning = fetchDigest().finally(() => { digestRunning = null; });
+  return digestRunning; // a second click waits for the same run
+}
+
+async function fetchDigest() {
+  if (!(await mantisAiEnabled())) throw new Error(MANTIS_AI_ERRORS.permission);
+  const settings = await getDigestSettings();
+  const found = await askHost({ type: 'tickets', model: DIGEST_MODEL });
+  if (found.type !== 'tickets' || !Array.isArray(found.tickets)) throw new Error('The MantisAI helper is out of date. Open the toolbar popup → Settings → MantisAI → Reinstall helper.');
+  const digest = buildDigest(found, settings.staleDays);
+  await chrome.storage.local.set({ [DIGEST_LAST_KEY]: digest }).catch(() => {});
+  return { digest };
+}
+
+function digestNote(digest) {
+  const { active, stale } = digest;
+  if (!active.length) return { title: 'No active tickets', message: 'Nothing is assigned to you right now. Click for details.' };
+  const staleList = active.filter((t) => t.stale).slice(0, 3).map((t) => `#${t.id} (${plural(t.idleDays, 'day')})`).join(', ');
+  return {
+    title: `${plural(active.length, 'active ticket')}${stale ? ` · ${stale} stale` : ''}`,
+    message: stale
+      ? `No update for a while: ${staleList}${stale > 3 ? '…' : ''}. Click for the digest.`
+      : `All updated within ${plural(digest.staleDays, 'day')}. Click for the digest.`,
+  };
+}
+
+function notifyDigest(title, message) {
+  chrome.notifications?.create(DIGEST_NOTIFY_ID, { type: 'basic', iconUrl: 'icons/icon128.png', title, message, priority: 1 });
+}
+
+async function scheduledDigest() {
+  try {
+    const { digest } = await runDigest();
+    const note = digestNote(digest);
+    notifyDigest(note.title, note.message);
+  } catch (err) {
+    await chrome.storage.local.set({ [DIGEST_LAST_KEY]: { fetchedAt: Date.now(), error: err.message } }).catch(() => {});
+    notifyDigest('Ticket digest failed', err.message);
+  }
+}
+
+async function previewDigestNotification() {
+  if (!chrome.notifications) return { shown: false, reason: 'Notifications are not allowed for this extension.' };
+  const digest = (await chrome.storage.local.get(DIGEST_LAST_KEY))[DIGEST_LAST_KEY];
+  if (!digest?.active) return { shown: false, reason: 'Refresh the digest first.' };
+  const note = digestNote(digest);
+  notifyDigest(note.title, note.message);
+  return { shown: true };
+}
+
+let digestNotificationsWired = false;
+function wireDigestNotifications() {
+  if (digestNotificationsWired || !chrome.notifications) return;
+  digestNotificationsWired = true;
+  chrome.notifications.onClicked.addListener((id) => {
+    if (id !== DIGEST_NOTIFY_ID) return;
+    chrome.tabs.create({ url: chrome.runtime.getURL?.(INSIGHTS_PAGE) || INSIGHTS_PAGE });
+    chrome.notifications.clear(id);
+  });
+}
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== DIGEST_ALARM) return;
+  const settings = await getDigestSettings();
+  if (settings.enabled && Date.now() - alarm.scheduledTime < MISSED_GRACE_MS) await scheduledDigest();
+  return scheduleDigest();
+});
+chrome.runtime.onInstalled.addListener(scheduleDigest);
+chrome.runtime.onStartup.addListener(scheduleDigest);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes[DIGEST_KEY]) scheduleDigest();
+});
+chrome.permissions.onAdded.addListener(wireDigestNotifications);
+wireDigestNotifications();
+
+// ---------- time tracker ----------
+// When turned on (Settings → Time tracker; optional "tabs" and "idle" permissions),
+// counts the time Chrome is focused on each tab: Mantis tickets by number, every
+// other site by host name only (no paths, no page titles of other sites). Nothing
+// is counted while Chrome is in the background or you are idle. Days are kept in
+// chrome.storage.local for TIME_KEEP_DAYS and never leave this computer.
+
+const TIME_KEY = 'timeTracker';
+const TIME_LOG_KEY = 'timeLog'; // { 'YYYY-MM-DD': { tickets: { id: ms }, sites: { host: ms } } }
+const TIME_TITLES_KEY = 'timeTicketTitles'; // { id: title } from the Mantis tab titles
+const TIME_SEGMENT_KEY = 'timeSegment'; // session: what is being counted since `last`
+const TIME_ALARM = 'time-tracker';
+const TIME_PERMISSIONS = ['tabs', 'idle'];
+const TIME_IDLE_SECONDS = 180;
+const TIME_MAX_GAP_MS = 3 * 60 * 1000; // a longer gap between two checks was not observed: not counted
+const TIME_KEEP_DAYS = 90;
+const MANTIS_HOST = 'projects.webmavens.dev';
+const MANTIS_TICKET_PATH_RE = /^\/tickets\/(\d+)\/?$/;
+
+async function timeTrackingOn() {
+  const { enabled } = (await chrome.storage.sync.get(TIME_KEY))[TIME_KEY] || {};
+  return Boolean(enabled) && (await chrome.permissions.contains({ permissions: TIME_PERMISSIONS }).catch(() => false));
+}
+
+// What a tab counts as: { kind: 'ticket', id, title } on a Mantis ticket, { kind: 'site', id: host }
+// on any other web page, null for browser and extension pages.
+function timeTarget(tab) {
+  let url;
+  try {
+    url = new URL(tab?.url || '');
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  const host = url.hostname.replace(/^www\./, '');
+  const ticket = host === MANTIS_HOST && MANTIS_TICKET_PATH_RE.exec(url.pathname);
+  if (ticket) {
+    // Mantis titles its ticket pages "#9436 Title - Mantis" or similar; keep the title only.
+    const title = String(tab.title || '').replace(new RegExp(`^\\s*#?${ticket[1]}\\b\\s*[-:–·]?\\s*`), '').replace(/\s*[-|–]\s*[^-|–]*$/, '').trim();
+    return { kind: 'ticket', id: ticket[1], title: title.slice(0, 200) };
+  }
+  return host ? { kind: 'site', id: host } : null;
+}
+
+// Adds [from, to) to the log (sign -1 takes it back), split at local midnights.
+function creditTime(log, target, from, to, sign = 1) {
+  let start = from;
+  while (start < to) {
+    const dayEnd = new Date(start);
+    dayEnd.setHours(24, 0, 0, 0);
+    const end = Math.min(to, dayEnd.getTime());
+    const day = localDate(new Date(start));
+    const bucket = (log[day] ||= { tickets: {}, sites: {} })[target.kind === 'ticket' ? 'tickets' : 'sites'];
+    const ms = Math.max(0, (bucket[target.id] || 0) + sign * (end - start));
+    if (ms) bucket[target.id] = ms;
+    else delete bucket[target.id];
+    start = end;
+  }
+}
+
+function pruneTimeLog(log, now = Date.now()) {
+  const oldest = localDate(new Date(now - TIME_KEEP_DAYS * DAY_MS));
+  for (const day of Object.keys(log)) if (day < oldest) delete log[day];
+}
+
+// The focused tab, or null while Chrome is in the background, locked or idle.
+async function focusedTarget() {
+  const idle = await chrome.idle.queryState(TIME_IDLE_SECONDS).catch(() => 'active');
+  if (idle !== 'active') return null;
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  if (!win?.focused) return null;
+  const [tab] = await chrome.tabs.query({ active: true, windowId: win.id }).catch(() => []);
+  return timeTarget(tab);
+}
+
+// Every check credits the time since the previous one to what was focused then,
+// then notes what is focused now. Checks run on tab, window and idle changes and
+// once a minute, one at a time. `idleSince` (going idle) ends the stretch then and
+// takes back what the minute checks already counted after it. `from` is when the
+// segment's target was first seen, so nothing before it is taken back.
+let timeChecks = Promise.resolve();
+function checkTime({ idleSince } = {}) {
+  const run = async () => {
+    const now = Date.now();
+    const segment = (await chrome.storage.session.get(TIME_SEGMENT_KEY).catch(() => ({})))[TIME_SEGMENT_KEY];
+    const on = await timeTrackingOn();
+    const target = on ? await focusedTarget() : null;
+
+    if (segment?.target && now - segment.last <= TIME_MAX_GAP_MS) {
+      const end = idleSince == null ? now : Math.max(segment.from ?? segment.last, Math.min(now, idleSince));
+      if (end !== segment.last) {
+        const stored = await chrome.storage.local.get([TIME_LOG_KEY, TIME_TITLES_KEY]);
+        const log = stored[TIME_LOG_KEY] || {};
+        if (end > segment.last) creditTime(log, segment.target, segment.last, end);
+        else creditTime(log, segment.target, end, segment.last, -1);
+        pruneTimeLog(log, now);
+        const titles = stored[TIME_TITLES_KEY] || {};
+        if (segment.target.kind === 'ticket' && segment.target.title) titles[segment.target.id] = segment.target.title;
+        await chrome.storage.local.set({ [TIME_LOG_KEY]: log, [TIME_TITLES_KEY]: titles });
+      }
+    }
+    const same = target && segment?.target && segment.target.kind === target.kind && segment.target.id === target.id && now - segment.last <= TIME_MAX_GAP_MS && idleSince == null;
+    if (target) await chrome.storage.session.set({ [TIME_SEGMENT_KEY]: { target, from: same ? segment.from ?? segment.last : now, last: now } });
+    else await chrome.storage.session.remove?.(TIME_SEGMENT_KEY);
+  };
+  timeChecks = timeChecks.then(run, run).catch(() => {});
+  return timeChecks;
+}
+
+async function scheduleTimeTracker() {
+  if (await timeTrackingOn()) {
+    chrome.idle?.setDetectionInterval(TIME_IDLE_SECONDS);
+    if (!(await chrome.alarms.get?.(TIME_ALARM))) await chrome.alarms.create(TIME_ALARM, { periodInMinutes: 1 });
+  } else {
+    await chrome.alarms.clear(TIME_ALARM);
+  }
+  return checkTime();
+}
+
+let idleWired = false;
+function wireIdle() {
+  if (idleWired || !chrome.idle) return;
+  idleWired = true;
+  chrome.idle.onStateChanged.addListener((state) => {
+    // Going idle is noticed TIME_IDLE_SECONDS after the last input; that stretch is taken back.
+    checkTime(state === 'idle' ? { idleSince: Date.now() - TIME_IDLE_SECONDS * 1000 } : {});
+  });
+}
+
+chrome.tabs.onActivated?.addListener(() => checkTime());
+chrome.tabs.onUpdated?.addListener((_id, change, tab) => {
+  if (tab?.active && (change.url || change.title)) checkTime();
+});
+chrome.windows?.onFocusChanged.addListener(() => checkTime());
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === TIME_ALARM) return checkTime();
+});
+chrome.runtime.onInstalled.addListener(scheduleTimeTracker);
+chrome.runtime.onStartup.addListener(scheduleTimeTracker);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes[TIME_KEY]) scheduleTimeTracker();
+});
+chrome.permissions.onAdded.addListener(() => {
+  wireIdle();
+  scheduleTimeTracker();
+});
+chrome.permissions.onRemoved?.addListener(scheduleTimeTracker);
+wireIdle();
 
 // ---------- Mantis header layout ----------
 // Existing users keep the pre-1.8 header (no saved layout, see header-layout.js);

@@ -22,6 +22,23 @@ A Chrome extension for adding Standups and EODs to
 
 You can change them at `chrome://extensions/shortcuts`.
 
+## Ticket digest and time tracker
+
+Both are switched on in the toolbar popup → **Settings**, and shown on the
+**Insights** page (the *Open Insights* button there).
+
+- **Ticket digest:** your active tickets (new, assigned or in progress, without
+  the "Completed - Needs Testing" / "[Testing done]" label), with the ones that
+  have had no update for a set number of days (3 by default) flagged as stale.
+  A daily notification at the time you pick. It uses the MantisAI helper
+  (Settings → MantisAI) for read-only lookups, so set that up first. After
+  updating the extension, click **Reinstall helper** there once.
+- **Time tracker:** counts the time Chrome is focused on each Mantis ticket and
+  on other sites, paused while you are idle or in another app. Shows a weekly
+  breakdown per day, ticket and site. Other sites are kept by host name only,
+  stored on this computer for 90 days. Chrome asks to let the extension see your
+  tabs when you turn it on.
+
 ## Using with Claude Code
 
 The repo includes a `/standup` skill for [Claude Code](https://claude.com/claude-code)

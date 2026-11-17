@@ -319,6 +319,146 @@ Promise.all([chrome.storage.sync.get(AUTO_EOD_KEY), chrome.storage.local.get(AUT
   renderLastRun(local[AUTO_EOD_LAST_KEY]);
 }, renderAutoEod);
 
+// ---------- ticket digest + time tracker ----------
+// Settings for background.js; the digest and the weekly breakdown are on insights.html.
+
+const DIGEST_KEY = 'ticketDigest';
+const DIGEST_DEFAULTS = { enabled: false, time: '10:00', weekdaysOnly: true, staleDays: 3 };
+const TIME_KEY = 'timeTracker';
+const TIME_LOG_KEY = 'timeLog';
+const TIME_PERMISSIONS = ['tabs', 'idle'];
+
+const dg = {
+  box: document.querySelector('#digest'),
+  enabled: document.querySelector('#dg-enabled'),
+  time: document.querySelector('#dg-time'),
+  weekdays: document.querySelector('#dg-weekdays'),
+  stale: document.querySelector('#dg-stale'),
+  open: document.querySelector('#dg-open'),
+  preview: document.querySelector('#dg-preview'),
+};
+let digestSettings = { ...DIGEST_DEFAULTS };
+
+const openInsights = () => chrome.tabs.create({ url: chrome.runtime.getURL('insights.html') }).then(() => window.close());
+
+function renderDigestSettings() {
+  dg.enabled.checked = digestSettings.enabled;
+  dg.time.value = digestSettings.time;
+  dg.weekdays.checked = digestSettings.weekdaysOnly;
+  if (document.activeElement !== dg.stale) dg.stale.value = digestSettings.staleDays;
+  dg.box.classList.toggle('on', digestSettings.enabled);
+}
+
+function digestSummary() {
+  const [h, m] = digestSettings.time.split(':').map(Number);
+  const at = new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `Ticket digest on · ${at} ${digestSettings.weekdaysOnly ? 'on weekdays' : 'every day'}`;
+}
+
+async function saveDigestSettings(changes, message) {
+  digestSettings = { ...digestSettings, ...changes };
+  renderDigestSettings();
+  try {
+    await chrome.storage.sync.set({ [DIGEST_KEY]: digestSettings });
+    if (message) showStatus(message);
+  } catch (err) {
+    showStatus(`Could not save: ${err.message}`, true);
+  }
+}
+
+dg.enabled.addEventListener('change', async () => {
+  if (!dg.enabled.checked) return saveDigestSettings({ enabled: false }, 'Ticket digest off');
+  const notified = askForNotifications(); // straight from the click
+  if (!(await chrome.permissions.contains({ permissions: ['nativeMessaging'] }).catch(() => false))) {
+    dg.enabled.checked = false;
+    showMantisAi();
+    return showStatus('Set up MantisAI first: it looks up your tickets.', true);
+  }
+  if (!(await notified)) {
+    dg.enabled.checked = false;
+    return showStatus('Allow notifications to get the daily digest.', true);
+  }
+  saveDigestSettings({ enabled: true }, digestSummary());
+});
+dg.time.addEventListener('change', () => {
+  if (/^\d{2}:\d{2}$/.test(dg.time.value)) saveDigestSettings({ time: dg.time.value }, digestSettings.enabled ? digestSummary() : 'Saved');
+  else renderDigestSettings();
+});
+dg.weekdays.addEventListener('change', () => saveDigestSettings({ weekdaysOnly: dg.weekdays.checked }, digestSettings.enabled ? digestSummary() : 'Saved'));
+dg.stale.addEventListener('change', () => {
+  const days = Math.round(Number(dg.stale.value));
+  if (!Number.isFinite(days) || days < 1 || days > 60) {
+    renderDigestSettings();
+    return showStatus('Pick between 1 and 60 days.', true);
+  }
+  saveDigestSettings({ staleDays: days }, `Stale after ${days} day${days === 1 ? '' : 's'} (applies from the next refresh)`);
+});
+dg.open.addEventListener('click', openInsights);
+dg.preview.addEventListener('click', () => {
+  askForNotifications().then(async (granted) => {
+    if (!granted) return showStatus('Allow notifications to preview the digest.', true);
+    const res = await chrome.runtime.sendMessage({ type: 'previewDigestNotification' }).catch((err) => ({ ok: false, error: err.message }));
+    if (!res?.ok) showStatus(res?.error || 'Could not show the preview.', true);
+    else if (!res.shown) showStatus(res.reason || 'Could not show the preview.', true);
+    else showStatus('Preview notification sent');
+  });
+});
+
+chrome.storage.sync.get(DIGEST_KEY).then((stored) => {
+  digestSettings = { ...DIGEST_DEFAULTS, ...stored[DIGEST_KEY] };
+  renderDigestSettings();
+}, renderDigestSettings);
+
+const tt = {
+  box: document.querySelector('#time-tracker'),
+  enabled: document.querySelector('#tt-enabled'),
+  open: document.querySelector('#tt-open'),
+  today: document.querySelector('#tt-today'),
+};
+
+function renderTracker(on) {
+  tt.enabled.checked = on;
+  tt.box.classList.toggle('on', on);
+}
+
+async function renderTrackedToday() {
+  const log = (await chrome.storage.local.get(TIME_LOG_KEY).catch(() => ({})))[TIME_LOG_KEY] || {};
+  const day = log[localDate(new Date())];
+  const sum = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  const tickets = Math.round(sum(day?.tickets) / 60000);
+  const all = Math.round((sum(day?.tickets) + sum(day?.sites)) / 60000);
+  const fmt = (min) => (min >= 60 ? `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m` : `${min}m`);
+  tt.today.textContent = day ? `Today: ${fmt(tickets)} on tickets of ${fmt(all)}` : '';
+}
+
+tt.enabled.addEventListener('change', () => {
+  if (!tt.enabled.checked) {
+    renderTracker(false);
+    return chrome.storage.sync.set({ [TIME_KEY]: { enabled: false } }).then(() => showStatus('Time tracker off'), (err) => showStatus(`Could not save: ${err.message}`, true));
+  }
+  // Chrome only asks from a click, so request before anything else.
+  chrome.permissions.request({ permissions: TIME_PERMISSIONS }).catch(() => false).then(async (granted) => {
+    if (!granted) {
+      renderTracker(false);
+      return showStatus('The time tracker needs to see your tabs to work.', true);
+    }
+    renderTracker(true);
+    try {
+      await chrome.storage.sync.set({ [TIME_KEY]: { enabled: true } });
+      showStatus('Time tracker on');
+    } catch (err) {
+      showStatus(`Could not save: ${err.message}`, true);
+    }
+  });
+});
+tt.open.addEventListener('click', openInsights);
+
+Promise.all([chrome.storage.sync.get(TIME_KEY), chrome.permissions.contains({ permissions: TIME_PERMISSIONS }).catch(() => false)]).then(
+  ([stored, granted]) => renderTracker(Boolean(stored[TIME_KEY]?.enabled) && granted),
+  () => renderTracker(false),
+);
+renderTrackedToday();
+
 // ---------- keyboard shortcuts ----------
 // Bindings belong to Chrome (manifest "commands"); it saves changes and
 // rejects keys already in use, leaving a conflicting default unset.

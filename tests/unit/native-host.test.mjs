@@ -2,7 +2,7 @@
 // Chrome's native messaging framing with a fake Claude CLI (fixtures/fake-claude.mjs).
 
 import { test, describe } from 'node:test';
-import { isReadOnly } from '../../native-host/mantis-ai-host.mjs';
+import { isReadOnly, isDigestCall } from '../../native-host/mantis-ai-host.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -47,7 +47,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
           const allow = onApproval(msg);
           if (allow !== undefined) send({ type: 'approve', id: msg.id, allow });
         }
-        if (['done', 'error', 'pong', 'commits', 'summary'].includes(msg.type) || msg.type === stopAfter) end();
+        if (['done', 'error', 'pong', 'commits', 'summary', 'tickets'].includes(msg.type) || msg.type === stopAfter) end();
       }
     });
     const send = (msg) => {
@@ -63,7 +63,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
 describe('MantisAI helper', () => {
   test('ping reports the Claude CLI version', async () => {
     const { replies } = await talk({ type: 'ping' });
-    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.2.0', claudeVersion: '9.9.9 (Claude Code)' }]);
+    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.3.0', claudeVersion: '9.9.9 (Claude Code)' }]);
   });
 
   test('streams a reply and returns the conversation id', async () => {
@@ -248,5 +248,59 @@ describe('MantisAI helper: EOD from commits', () => {
   test('summarize explains a logged-out CLI', async () => {
     const { replies } = await talk({ type: 'summarize', prompt: 'x', system: 'y' }, { mode: 'auth' });
     assert.equal(replies.at(-1).code, 'auth');
+  });
+});
+
+describe('MantisAI helper: ticket digest', () => {
+  const M = 'mcp__webmavens-projects__';
+  const item = (id, status_key) => ({ id, status_key, title: `T${id}`, project_id: 1, updated_at: '2026-11-10T10:00:00+00:00', labels: [] });
+  const list = (status_key, extra = {}) => ({ action: 'list', status_key, assignee_id: 200, limit: 100, ...extra });
+  const WHO = { name: `${M}whoami`, input: {}, result: { user_id: 200, name: 'Dev', role: 'developer' } };
+  const PROJECTS = { name: `${M}lookups`, input: { action: 'list_projects' }, result: { action: 'list_projects', data: [{ id: 1, name: 'App', slug: 'app' }] } };
+  const page = (status, items, next = null, cursor) => ({ name: `${M}tickets`, input: list(status, cursor ? { cursor } : {}), result: { items, next_cursor: next } });
+  const run = (calls) => talk({ type: 'tickets', model: 'haiku' }, { mode: 'calls', env: { FAKE_CLAUDE_CALLS: JSON.stringify(calls) } });
+
+  test('only whoami, list_projects and tickets list pass the gate', () => {
+    assert.ok(isDigestCall(`${M}whoami`, {}) && isDigestCall(`${M}lookups`, { action: 'list_projects' }) && isDigestCall(`${M}tickets`, { action: 'list' }));
+    for (const [tool, action] of [['tickets', 'get'], ['tickets', 'change_status'], ['lookups', 'list_users'], ['notes', 'list'], ['chat', 'send']]) {
+      assert.equal(isDigestCall(`${M}${tool}`, { action }), false, `${tool} ${action}`);
+    }
+    assert.equal(isDigestCall('mcp__other__tickets', { action: 'list' }), false);
+  });
+
+  test('returns every page of each status, read from the lookups themselves', async () => {
+    const { replies, claudeRun, hook } = await run([
+      WHO, PROJECTS,
+      page('new', []),
+      page('assigned', [item(1, 'assigned')], 'c2'),
+      page('assigned', [item(2, 'assigned')], null, 'c2'),
+      page('in_progress', [item(3, 'in_progress')]),
+      { name: `${M}tickets`, input: { action: 'change_status', ticket_id: 3, status_key: 'resolved' }, result: {} },
+    ]);
+    const reply = replies.at(-1);
+    assert.equal(reply.type, 'tickets', reply.error);
+    assert.deepEqual(reply.user, { id: 200, name: 'Dev' });
+    assert.deepEqual(reply.projects, [{ id: 1, name: 'App' }]);
+    assert.deepEqual(reply.tickets.map((t) => t.id), [1, 2, 3]);
+    assert.equal(hook.at(-1).permissionDecision, 'deny', 'a change is refused');
+    assert.ok(hook.slice(0, -1).every((d) => d.permissionDecision === 'allow'));
+    const { args } = claudeRun;
+    assert.equal(args[args.indexOf('--tools') + 1], '');
+    assert.ok(args.includes('--strict-mcp-config') && args.includes('--no-session-persistence'));
+    assert.ok(!args.some((a) => /allowed-?tools|dangerously|permission-mode|resume/i.test(a)));
+    assert.equal(args[args.indexOf('--model') + 1], 'haiku');
+  });
+
+  test('refuses a partial list: a page not fetched, a status missing, someone else\'s tickets', async () => {
+    for (const calls of [
+      [WHO, page('new', []), page('assigned', [item(1, 'assigned')], 'c2'), page('in_progress', [])],
+      [WHO, page('new', []), page('in_progress', [])],
+      [WHO, page('new', []), page('assigned', []), { ...page('in_progress', []), input: list('in_progress', { assignee_id: 7 }) }],
+    ]) {
+      const { replies } = await run(calls);
+      assert.equal(replies.at(-1).code, 'incomplete', JSON.stringify(replies.at(-1)));
+    }
+    const { replies } = await run([page('new', [])]);
+    assert.match(replies.at(-1).error, /whoami/);
   });
 });
