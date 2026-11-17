@@ -6,6 +6,9 @@
        dup=<count>   same-day standups for ticket 123     prio=<level> ticket shows this priority
        err=1         EOD list fails (logged out)          saveerr=1    saving an EOD fails
        heading=<text> the ticket shows "#<id> <text>" above it, like Mantis
+       hint=<ids>    today's standup tickets remembered from a last visit (comma-separated)
+       slow=<ms>     the EOD list takes this long to load
+       titles=1      ticket column holds "#<number> <title>", like the real list
        header=1      a Mantis-like header bar             ai=<mode>    MantisAI helper: reply (default) | slow | error | setup |
                                                                         lookup (reads a ticket) | approve (asks to resolve it) | noauth -->
 <html>
@@ -44,12 +47,18 @@
       eods.push({ id: '19998', ticket: '1234', link: 'https://github.com/acme/app/issues/123', plannedAction: 'Other ticket', priority: 'Low', estTime: '-', createdAt: `${today} 11:00:00`, update: '' });
     }
 
+    // Like the real list: "#<number> <ticket title>" in the ticket column.
+    if (q.get('titles')) {
+      const TITLES = ['Papertrail Error', 'Symptom escalation and pattern detection logic tweaks for the triage flow on mobile and web', 'Update the project count'];
+      eods.forEach((e, i) => { e.ticket = `#${e.ticket} ${TITLES[i % TITLES.length]}`; });
+    }
+
     // What the tests can inspect.
     window.T = {
       sent: [], payloads: [], leaked: 0, onMessage: null,
       root: () => document.querySelector('mantis-quick-standup').shadowRoot,
       ai: () => document.querySelector('mantis-ai').shadowRoot,
-      aiPorts: [], local: {},
+      aiPorts: [], local: q.get('hint') != null ? { standupTicketsToday: { date: today, tickets: q.get('hint').split(',').filter(Boolean) } } : {},
       wait: (ms) => new Promise((r) => setTimeout(r, ms)),
       // Synthetic key event on the focused element inside the extension UI.
       key: (key, init = {}) => (T.root().activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true, ...init })),
@@ -115,11 +124,18 @@
           T.payloads.push(payload);
           await T.wait(30);
           if (type === 'fetchEods') {
+            if (q.get('slow')) await T.wait(Number(q.get('slow')));
             return q.get('err')
               ? { ok: false, error: 'You are not logged into standup.webmavens.dev. Log in at https://standup.webmavens.dev/login, then try again.' }
               : { ok: true, eods: structuredClone(eods) };
           }
-          if (type === 'submitStandup') return { ok: true };
+          if (type === 'submitStandup') {
+            // Like the standup site: the new standup is also a new (empty) EOD entry.
+            const d = new Date();
+            const now = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 12:00:00`;
+            eods.push({ id: String(30000 + eods.length), ticket: String(payload.ticket), link: payload.repoLink, plannedAction: payload.plannedAction, priority: payload.priority, estTime: payload.estTime, createdAt: now, update: '' });
+            return { ok: true };
+          }
           if (type === 'updateEod') {
             await T.wait(100);
             if (q.get('saveerr')) return { ok: false, error: 'Standup session expired. Reload standup.webmavens.dev and try again.' };

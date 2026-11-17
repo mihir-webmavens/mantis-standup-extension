@@ -14,6 +14,12 @@
   let eodRequest = 0;
   let eodEdit = null; // { id, textarea, saving, error } for the entry being edited
   let eodSavedId = null; // briefly marks the entry that was just saved
+  let fabShown = null; // "<ticket>:<eod|standup>" last brought into view by showFabForTicket
+  let eodsKnown = false; // eodState.eods came from the standup site at least once
+  let todayHint = null; // today's standup tickets remembered from the last visit, until the list loads
+  let scrollToCurrent = false; // the EOD panel was just opened: bring this ticket's entry into view
+  const TODAY_KEY = 'standupTicketsToday'; // chrome.storage.local: { date, tickets }
+  const DECIDE_TIMEOUT_MS = 2500;
 
   // ---------- ticket + priority detection ----------
 
@@ -126,6 +132,9 @@
     /* Off ticket pages only the EOD button is shown, so there is nothing to scroll to. */
     .fabs.eod-only .fab-standup { display: none; }
     .fabs.eod-only .fab::after { display: none; }
+    /* Hidden until it is known which button a ticket page starts on, so it never jumps. */
+    .fabs { transition: opacity .15s ease; }
+    .fabs.deciding { visibility: hidden; opacity: 0; }
     .panel {
       position: fixed; right: 20px; bottom: 76px; z-index: 2147483647;
       width: 340px; max-width: calc(100vw - 32px);
@@ -209,11 +218,20 @@
     .eod.filled { border-left-color: #22c55e; }
     .eod.editing { border-left-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
     .eod + .eod { margin-top: 8px; }
-    .eod-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .eod-id { display: flex; align-items: center; gap: 6px; min-width: 0; }
-    .eod-top a, .eod-top strong { font-weight: 700; font-size: 13px; color: var(--link); text-decoration: none; }
+    /* Today's standup for the ticket open on this page. */
+    .eod.current { background: var(--accent-soft); border-top-color: var(--accent); border-right-color: var(--accent); border-bottom-color: var(--accent); }
+    .badge.this-ticket { background: var(--accent); color: #fff; border-color: var(--accent); white-space: nowrap; }
+    /* Card head: number, priority and tag on one line with the time; the title below. */
+    .eod-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .eod-id { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+    .eod-top a, .eod-top strong { font-weight: 700; font-size: 13px; color: var(--link); text-decoration: none; font-variant-numeric: tabular-nums; }
     .eod-top a:hover { text-decoration: underline; }
-    .eod-sub { color: var(--faint); font-size: 11px; white-space: nowrap; }
+    .eod-sub { color: var(--faint); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .eod-title {
+      margin-top: 4px; font-weight: 650; color: var(--text); line-height: 1.35; word-break: break-word;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .eod-top + .eod-action, .eod-title + .eod-action { margin-top: 6px; }
     .badge {
       display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid transparent;
       font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; line-height: 16px;
@@ -254,7 +272,7 @@
     root.innerHTML = `
       <style>${CSS}</style>
       <style class="fab-style">${ButtonStyles.css(ButtonStyles.DEFAULT)}</style>
-      <div class="fabs eod-only">
+      <div class="fabs eod-only deciding">
         <div class="fab-scroll">
           <button class="fab fab-standup" type="button">+ Standup</button>
           <button class="fab fab-eod" type="button">EOD</button>
@@ -351,7 +369,39 @@
     closeOnEscape(ui.eodPanel, () => (eodEdit ? cancelEodEdit() : closeEodPanel()));
 
     watchButtonStyle(root.querySelector('.fab-style'));
+    // Today's standup tickets from the last visit decide the first button at once;
+    // the fresh list below confirms it.
+    try {
+      chrome.storage.local.get(TODAY_KEY).then((v) => {
+        const saved = v[TODAY_KEY];
+        todayHint = saved?.date === localDate(new Date()) && Array.isArray(saved.tickets) ? saved.tickets.map(String) : null;
+        showFabForTicket();
+      }, () => {});
+    } catch {
+      // Extension reloaded under this page.
+    }
+    setTimeout(revealFabs, DECIDE_TIMEOUT_MS); // never stay hidden if the list cannot load
     loadEods();
+  }
+
+  function revealFabs() {
+    ui.fabs.classList.remove('deciding');
+  }
+
+  // Keeps today's standup tickets for the next page load (see todayHint).
+  let rememberedToday = null;
+  function rememberToday() {
+    const today = localDate(new Date());
+    const tickets = [...new Set(eodState.eods.filter((e) => isToday(e.createdAt, today)).map(eodTicketId).filter(Boolean))];
+    const value = { date: today, tickets };
+    const json = JSON.stringify(value);
+    if (json === rememberedToday) return;
+    rememberedToday = json;
+    try {
+      chrome.storage.local.set({ [TODAY_KEY]: value }).catch(() => {});
+    } catch {
+      // Extension reloaded under this page.
+    }
   }
 
   // Applies the style picked in the toolbar popup, now and whenever it changes.
@@ -473,6 +523,8 @@
     MantisAI.close();
     ui.eodPanel.hidden = false;
     (eodEdit?.textarea ?? ui.eodPanel).focus(); // keyboard focus inside the panel, so Esc reaches it
+    scrollToCurrent = true;
+    renderEods(); // show and highlight the list already loaded while it refreshes
     loadEods();
   }
 
@@ -533,17 +585,52 @@
     ui.eodList.hidden = !eods.length;
     // Re-rendering drops focus from the list; keep it in the panel so Esc still works.
     if (listHadFocus) (eodEdit && focused === eodEdit.textarea ? eodEdit.textarea : ui.eodPanel).focus();
+    if (scrollToCurrent && !ui.eodPanel.hidden) {
+      const current = ui.eodList.querySelector('.eod.current');
+      if (current) current.scrollIntoView({ block: 'nearest' });
+      if (current || status === 'ready' || status === 'error') scrollToCurrent = false;
+    }
+    if (status === 'ready') {
+      eodsKnown = true;
+      rememberToday();
+    }
     renderDuplicateNotice();
+    showFabForTicket();
+  }
+
+  // Today's standups for a ticket, from the EOD list (which holds today's standups).
+  function standupsToday(ticket) {
+    const today = localDate(new Date());
+    return ticket ? eodState.eods.filter((e) => eodTicketId(e) === ticket && isToday(e.createdAt, today)) : [];
+  }
+
+  // A ticket page shows EOD when the ticket already has a standup today, else
+  // + Standup. Applied when the ticket or that answer changes, so scrolling to the
+  // other button by hand sticks until then.
+  // Until the list has loaded once, the tickets remembered from the last visit
+  // decide; with neither, the buttons stay hidden (revealFabs has a time limit).
+  function showFabForTicket() {
+    if (!ui || !currentTicket) return;
+    let has;
+    if (eodsKnown) has = standupsToday(currentTicket).length > 0;
+    else if (eodState.status === 'error') has = false;
+    else if (todayHint) has = todayHint.includes(currentTicket);
+    else return;
+    const which = has ? 'eod' : 'standup';
+    const key = `${currentTicket}:${which}`;
+    if (key !== fabShown) {
+      fabShown = key;
+      const scroller = ui.fabs.querySelector('.fab-scroll');
+      scroller.scrollTop = which === 'eod' ? scroller.scrollHeight : 0;
+    }
+    revealFabs();
   }
 
   // Warns (without blocking) when this ticket already has a standup today,
   // using the EOD list, which holds today's standups. Not right after adding
   // one: it waits until the panel is opened again (see justAddedTicket).
   function renderDuplicateNotice() {
-    const today = localDate(new Date());
-    const same = eodState.status === 'ready' && currentTicket && currentTicket !== justAddedTicket
-      ? eodState.eods.filter((e) => eodTicketId(e) === currentTicket && isToday(e.createdAt, today))
-      : [];
+    const same = eodState.status === 'ready' && currentTicket !== justAddedTicket ? standupsToday(currentTicket) : [];
     ui.dupNote.hidden = !same.length;
     if (!same.length) return;
     const [first] = same;
@@ -571,18 +658,41 @@
     return !date || date === today;
   }
 
+  // "2026-11-17 15:59:03" -> "15:59" today, "17 Nov 15:59" on another day.
+  function eodTime(createdAt) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(createdAt || '');
+    if (!m) return createdAt || '';
+    if (`${m[1]}-${m[2]}-${m[3]}` === localDate(new Date())) return m[4];
+    const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${m[4]}`;
+  }
+
   function eodItem(eod) {
     const editing = eodEdit?.id === eod.id;
-    const li = el('li', `eod ${editing ? 'editing' : eod.update ? 'filled' : 'pending'}`);
+    const current = Boolean(currentTicket) && eodTicketId(eod) === currentTicket && isToday(eod.createdAt, localDate(new Date()));
+    const li = el('li', `eod ${editing ? 'editing' : eod.update ? 'filled' : 'pending'}${current ? ' current' : ''}`);
     const top = el('div', 'eod-top');
     const id = el('div', 'eod-id');
-    const label = eod.ticket.trim().startsWith('#') ? eod.ticket.trim() : `#${eod.ticket.trim()}`; // "8263" or "#8263 Title"
+    // "8263", "#8263" or "#8263 Title": the number goes in the head, the title on its own line.
+    const parts = /^#?(\d+)\b\s*[-:–·]?\s*([\s\S]*)$/.exec(eod.ticket.trim());
+    const label = parts ? `#${parts[1]}` : eod.ticket.trim();
+    const title = parts ? parts[2].trim() : '';
     const ticket = eod.link ? el('a', '', label) : el('strong', '', label);
     if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
+    if (title) ticket.title = `${label} ${title}`;
     id.append(ticket);
     if (eod.priority) id.append(el('span', `badge ${eod.priority.toLowerCase()}`, eod.priority));
-    top.append(id, el('span', 'eod-sub', eod.createdAt));
-    li.append(top, el('div', 'eod-action', eod.plannedAction));
+    if (current) id.append(el('span', 'badge this-ticket', 'This ticket'));
+    const when = el('span', 'eod-sub', eodTime(eod.createdAt));
+    when.title = eod.createdAt;
+    top.append(id, when);
+    li.append(top);
+    if (title) {
+      const t = el('div', 'eod-title', title);
+      t.title = title; // the full title when it is cut to two lines
+      li.append(t);
+    }
+    li.append(el('div', 'eod-action', eod.plannedAction));
 
     if (editing) {
       li.append(eodEditor());
@@ -738,6 +848,7 @@
     if (!host) buildUi();
 
     ui.fabs.classList.toggle('eod-only', !id);
+    if (!id) revealFabs(); // only EOD here: nothing to decide
     if (id !== currentTicket) {
       currentTicket = id;
       ui.text.value = '';
@@ -746,9 +857,12 @@
       ticketTouched = false;
       ui.status.hidden = true;
       renderDuplicateNotice();
-      // A new ticket page starts on + Standup. Otherwise the scroller keeps EOD
-      // in view when + Standup reappears above it.
-      if (id) ui.fabs.querySelector('.fab-scroll').scrollTop = 0;
+      // A new ticket page starts on EOD if it has a standup today, else on + Standup.
+      fabShown = null;
+      if (id) {
+        ui.fabs.querySelector('.fab-scroll').scrollTop = 0;
+        showFabForTicket();
+      }
       if (id && !ui.panel.hidden) refreshMeta();
       if (!id) closePanel();
     } else if (id && !ticketTouched && !ui.panel.hidden) {

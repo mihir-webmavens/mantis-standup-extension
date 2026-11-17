@@ -742,12 +742,22 @@ function eodCard(eod) {
   const li = make('li', `eod ${isEditing ? 'editing' : eod.update ? 'filled' : 'pending'}`);
   const top = make('div', 'eod-top');
   const id = make('div', 'eod-id');
-  const ticket = eod.link ? make('a', '', ticketLabel(eod.ticket)) : make('strong', '', ticketLabel(eod.ticket));
+  // "#8263 Title": the number in the head, the title on its own line.
+  const parts = /^#?(\d+)\b\s*[-:–·]?\s*([\s\S]*)$/.exec(String(eod.ticket).trim());
+  const label = parts ? `#${parts[1]}` : ticketLabel(eod.ticket);
+  const title = parts ? parts[2].trim() : '';
+  const ticket = eod.link ? make('a', '', label) : make('strong', '', label);
   if (eod.link) Object.assign(ticket, { href: eod.link, target: '_blank', rel: 'noopener' });
   id.append(ticket);
   if (eod.priority) id.append(make('span', `prio ${eod.priority.toLowerCase()}`, eod.priority));
   top.append(id, make('span', 'eod-time', /\d{2}:\d{2}/.exec(eod.createdAt)?.[0] || eod.createdAt));
-  li.append(top, make('div', 'eod-action', eod.plannedAction));
+  li.append(top);
+  if (title) {
+    const t = make('div', 'eod-title', title);
+    t.title = title;
+    li.append(t);
+  }
+  li.append(make('div', 'eod-action', eod.plannedAction));
 
   if (isEditing) {
     li.append(eodEditor());

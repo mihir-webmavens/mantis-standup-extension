@@ -26,7 +26,7 @@ const routes = {
 async function openMantis(path, options = {}) {
   const page = await browser.open(`https://projects.webmavens.dev/${path}`, { routes, ...options });
   // Ready once the extension UI exists and the EOD list has been requested.
-  await page.eval(`(async () => { for (let i = 0; i < 100 && !(document.querySelector('mantis-quick-standup') && T.sent.includes('fetchEods')); i++) await T.wait(20); await T.wait(150); })()`);
+  await page.eval(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); for (let i = 0; i < 250 && !(document.querySelector('mantis-quick-standup') && window.T?.sent.includes('fetchEods')); i++) await wait(20); await wait(150); })()`);
   return page;
 }
 
@@ -312,6 +312,120 @@ describe('Mantis panels', { skip: !chromePath && 'no Chrome/Chromium found (set 
     // Away from tickets and back (Livewire changes the URL without a reload).
     await run(page, async () => { history.pushState({}, '', '/dashboard'); await T.wait(1200); history.pushState({}, '', '/tickets/456'); await T.wait(1200); });
     assert.equal(await shown(page), 'standup');
+    await page.close();
+  });
+
+  test('a ticket with a standup today opens on EOD; others on + Standup', async () => {
+    const shown = async (page) => run(page, async () => (T.root().querySelector('.fab-scroll').scrollTop < 22 ? 'standup' : 'eod'));
+    const page = await openMantis('tickets/123?dup=1');
+    assert.equal(await shown(page), 'eod');
+    // Scrolled back to + Standup by hand: stays there.
+    await run(page, async () => { T.root().querySelector('.fab-scroll').scrollTop = 0; await T.wait(1200); });
+    assert.equal(await shown(page), 'standup');
+    // Ticket 456 has no standup today; back on 123 it is EOD again.
+    await run(page, async () => { history.pushState({}, '', '/tickets/456'); await T.wait(1200); });
+    assert.equal(await shown(page), 'standup');
+    await run(page, async () => { history.pushState({}, '', '/tickets/123'); await T.wait(1200); });
+    assert.equal(await shown(page), 'eod');
+    await page.close();
+
+    // Adding the first standup today switches to EOD.
+    const fresh = await openMantis('tickets/123');
+    assert.equal(await shown(fresh), 'standup');
+    await run(fresh, async () => {
+      const root = T.root();
+      root.querySelector('.fab-standup').click();
+      root.querySelector('textarea').value = 'Working on it';
+      root.querySelector('.submit').click();
+      await T.wait(300);
+    });
+    assert.equal(await shown(fresh), 'eod');
+    await fresh.close();
+  });
+
+  test('no jump on load: the button stays hidden until it is known, then shows the right one', async () => {
+    // Every frame from the start: which button is visible (null while hidden).
+    const frames = (path) => browser.open(`https://projects.webmavens.dev/${path}`, { routes }).then(async (page) => {
+      const seen = await run(page, async () => {
+        const seen = [];
+        const start = performance.now();
+        while (performance.now() - start < 1500) {
+          const root = document.querySelector('mantis-quick-standup')?.shadowRoot;
+          const fabs = root?.querySelector('.fabs');
+          const shown = !fabs || getComputedStyle(fabs).visibility === 'hidden' ? null : root.querySelector('.fab-scroll').scrollTop < 22 ? 'standup' : 'eod';
+          if (seen.at(-1) !== shown) seen.push(shown);
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+        return seen;
+      });
+      await page.close();
+      return seen;
+    });
+    assert.deepEqual(await frames('tickets/123?dup=1&slow=400'), [null, 'eod']);
+    assert.deepEqual(await frames('tickets/456?dup=1&slow=400'), [null, 'standup']);
+    // Remembered from the last visit: shown right away, before the slow list arrives.
+    const page = await browser.open('https://projects.webmavens.dev/tickets/123?dup=1&slow=1000&hint=123', { routes });
+    const early = await run(page, async () => {
+      await T.wait(200);
+      const root = T.root();
+      return { visible: getComputedStyle(root.querySelector('.fabs')).visibility !== 'hidden', eod: root.querySelector('.fab-scroll').scrollTop >= 22, loaded: root.querySelector('.fab-eod').textContent !== 'EOD (…)' };
+    });
+    assert.deepEqual(early, { visible: true, eod: true, loaded: false });
+    // The loaded list is remembered for the next visit.
+    const remembered = await run(page, async () => { await T.wait(1200); return T.local.standupTicketsToday.tickets; });
+    assert.deepEqual(remembered, ['8380', '8381', '8382', '123', '1234']);
+    await page.close();
+  });
+
+  test('the EOD list highlights and scrolls to this ticket\'s standup', async () => {
+    const page = await openMantis('tickets/123?n=8&dup=1');
+    const r = await run(page, async () => {
+      const root = T.root();
+      root.querySelector('.fab-eod').click();
+      await T.wait(150);
+      const current = [...root.querySelectorAll('.eod.current')];
+      const list = root.querySelector('.eod-list');
+      const box = current[0]?.getBoundingClientRect();
+      const view = list.getBoundingClientRect();
+      return {
+        current: current.map((li) => li.querySelector('.eod-action').textContent.slice(-3)),
+        tag: current[0]?.querySelector('.this-ticket')?.textContent,
+        others: root.querySelectorAll('.eod:not(.current) .this-ticket').length,
+        inView: box.top >= view.top - 1 && box.bottom <= view.bottom + 1,
+        scrolled: list.scrollTop > 0,
+      };
+    });
+    assert.deepEqual(r, { current: ['(0)'], tag: 'This ticket', others: 0, inView: true, scrolled: true });
+    await page.close();
+    // Off ticket pages nothing is highlighted.
+    const dash = await openMantis('dashboard?dup=1');
+    assert.equal(await run(dash, async () => { T.root().querySelector('.fab-eod').click(); await T.wait(150); return T.root().querySelectorAll('.eod.current').length; }), 0);
+    await dash.close();
+  });
+
+  test('EOD cards: number, priority and time on one line, the ticket title below it', async () => {
+    const page = await openMantis('tickets/123?n=2&dup=1&titles=1');
+    const cards = await run(page, async () => {
+      const root = T.root();
+      root.querySelector('.fab-eod').click();
+      await T.wait(150);
+      return [...root.querySelectorAll('.eod')].map((li) => {
+        const head = li.querySelector('.eod-top').getBoundingClientRect();
+        return {
+          number: li.querySelector('.eod-id a, .eod-id strong').textContent,
+          title: li.querySelector('.eod-title')?.textContent ?? null,
+          time: li.querySelector('.eod-sub').textContent,
+          oneLine: head.height < 26,
+          titleLines: li.querySelector('.eod-title') ? Math.round(li.querySelector('.eod-title').getBoundingClientRect().height / 17) : 0,
+        };
+      });
+    });
+    assert.deepEqual(cards.map((c) => c.number), ['#8380', '#8381', '#123', '#123', '#1234']);
+    assert.equal(cards[0].title, 'Papertrail Error');
+    assert.ok(cards.every((c) => c.oneLine), JSON.stringify(cards));
+    assert.ok(cards.every((c) => c.titleLines <= 2), 'long titles are cut to two lines');
+    assert.match(cards[0].time, /^\d{2}:\d{2}$/, 'today: time only');
+    assert.match(cards[3].time, /^\d{1,2} \w+ 10:00$/, 'another day: date and time');
     await page.close();
   });
 
