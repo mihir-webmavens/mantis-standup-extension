@@ -488,7 +488,7 @@ async function mantisAiEnabled() {
   return Boolean(chrome.runtime.connectNative) && (await chrome.permissions.contains({ permissions: ['nativeMessaging'] }).catch(() => false));
 }
 
-const MANTIS_AI_STREAM_TYPES = new Set(['delta', 'session', 'mantis', 'tool', 'tool_result', 'approval']);
+const MANTIS_AI_STREAM_TYPES = new Set(['delta', 'session', 'mantis', 'tool', 'tool_result', 'approval', 'pdf_fetch']);
 
 // Opens the helper, sends one request and calls onMessage for each reply until
 // done/error/pong; returns { stop, post } (post sends the user's approval answers).
@@ -558,7 +558,8 @@ function mantisAiSystemPrompt(context) {
     'The email address in your context is the user\'s Claude account email, which may differ from their Mantis account; use whoami for their Mantis identity.',
     '"Active ticket" / "Active tickets" (any capitalisation) always means tickets whose status is new, assigned or in_progress and that do not have the label "Completed - Needs Testing" or "[Testing done]" (compare label names ignoring case).',
     'To find them, list each of those three statuses (tickets list with status_key; for "my" active tickets add the user\'s assignee_id from whoami, and follow the cursor so no page is missed), then drop every ticket that carries either of those two labels; if the list does not show labels, check with tickets get. Say how many you found.',
-    'You cannot browse the web, run commands or read files.',
+    'PDF attachments: attachments download only returns a link for PDFs. Use read_pdf with the attachment id instead; it returns page images, text_content and annotations (sticky notes, comments, highlights). It returns up to 10 pages per call: for long PDFs use page_from/page_to, and when has_more_pages is true call again with page_from = next_page_from.',
+    'You cannot browse the web, run commands or read local files.',
     `Today is ${new Date().toDateString()}.`,
   ];
   if (context?.text) {
@@ -592,13 +593,21 @@ chrome.runtime.onConnect.addListener((port) => {
   };
   port.onMessage.addListener(async (msg) => {
     if (msg?.type === 'approve') return host?.post({ type: 'approve', id: msg.id, allow: msg.allow === true });
+    // A PDF the helper asked for (pdf_fetch), downloaded by the Mantis tab with the user's session.
+    if (msg?.type === 'pdf_chunk') return host?.post({ type: 'pdf_chunk', id: msg.id, data: String(msg.data || '') });
+    if (msg?.type === 'pdf_end') {
+      return host?.post({
+        type: 'pdf_end', id: msg.id, error: msg.error ? String(msg.error) : undefined, tooLarge: msg.tooLarge === true,
+        size: Number(msg.size) || 0, filename: typeof msg.filename === 'string' ? msg.filename : undefined,
+      });
+    }
     if (msg?.type !== 'send' || host) return;
     host = { stop: () => {}, post: () => {} }; // one request per port
     if (!(await mantisAiEnabled())) return reply({ type: 'error', code: 'permission', error: MANTIS_AI_ERRORS.permission });
     const model = (await chrome.storage.sync.get(MANTIS_AI_MODEL_KEY).catch(() => ({})))[MANTIS_AI_MODEL_KEY] || undefined;
     if (closed) return; // Stop was pressed while settings loaded
     host = talkToHost(
-      { type: 'chat', prompt: msg.prompt, sessionId: msg.sessionId || undefined, system: mantisAiSystemPrompt(msg.context), model },
+      { type: 'chat', prompt: msg.prompt, sessionId: msg.sessionId || undefined, system: mantisAiSystemPrompt(msg.context), model, features: ['pdf'] },
       reply,
     );
   });

@@ -190,7 +190,15 @@
     <p>
       Claude can only change something in Mantis (for example post a note, change a ticket’s status or send a chat message)
       after you click <strong>Approve</strong> on a card that shows exactly what will be done; if you click Deny, stop the
-      reply or do not answer, nothing is changed. Claude has no other tools: it cannot run commands or read your files.
+      reply or do not answer, nothing is changed. Apart from reading PDF attachments (below), Claude has no other tools: it
+      cannot run commands or read your files.
+    </p>
+    <p>
+      <strong>PDF attachments:</strong> when Claude asks to read a PDF attached to a Mantis ticket or note, the Mantis tab
+      downloads it from <code>projects.webmavens.dev</code> with your own session (so Mantis only gives you files you may
+      see) and passes it to the helper, which turns it into page images, text and the PDF’s comments on your computer
+      (with poppler-utils). What it returns becomes part of the conversation sent to Anthropic. The file and the converted
+      pages are cached in the helper’s folder on your computer and deleted after 7 days unused.
     </p>
     <p>
       Your MantisAI conversations (your messages and the answers, one conversation per ticket, up to the 40 most recent) are
@@ -215,7 +223,8 @@
         the Mantis header tabs you show and their order, and the MantisAI model), kept in Chrome’s extension storage and synced with your Chrome profile, and, if you use
         MantisAI, your conversations, kept only in Chrome’s local storage on your computer.</li>
       <li>It does not use analytics, tracking or advertising.</li>
-      <li>The extension itself does not send data to any server other than <code>standup.webmavens.dev</code>. MantisAI
+      <li>The extension itself does not send data to any server other than <code>standup.webmavens.dev</code> (it only
+        downloads PDF attachments from <code>projects.webmavens.dev</code> when MantisAI reads one). MantisAI
         messages go to the helper on your computer, which passes them to Anthropic through your Claude CLI; Mantis lookups
         go from your Claude CLI to <code>projects.webmavens.dev</code>.</li>
       <li>It does not run on any website other than <code>projects.webmavens.dev</code>.</li>

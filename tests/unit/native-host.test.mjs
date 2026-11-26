@@ -3,6 +3,7 @@
 
 import { test, describe } from 'node:test';
 import { isReadOnly, isDigestCall } from '../../native-host/mantis-ai-host.mjs';
+import { makePdf } from '../helpers/pdf.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,7 +16,8 @@ const FAKE_CLAUDE = new URL('tests/fixtures/fake-claude.mjs', ROOT).pathname;
 
 // Starts the helper, sends `request`, and collects replies until done/error/pong.
 // `onApproval(msg)` returns the user's answer (true/false) or undefined for none.
-function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, mcp, onApproval, env = {} } = {}) {
+// `onPdfFetch(msg)` plays the extension's download: returns { bytes, filename } or { error } / { tooLarge, size }.
+function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, mcp, onApproval, onPdfFetch, env = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-test-'));
   const log = path.join(dir, 'claude.json');
   const host = spawn(process.execPath, [HOST], {
@@ -32,8 +34,9 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
       host.on('close', (code) => {
         const claudeRun = fs.existsSync(log) ? JSON.parse(fs.readFileSync(log, 'utf8')) : null;
         const hook = fs.existsSync(`${log}.hook`) ? JSON.parse(fs.readFileSync(`${log}.hook`, 'utf8')) : null;
+        const pdf = fs.existsSync(`${log}.pdf`) ? JSON.parse(fs.readFileSync(`${log}.pdf`, 'utf8')) : null;
         fs.rmSync(dir, { recursive: true, force: true });
-        resolve({ replies, claudeRun, hook, exitCode: code, dir });
+        resolve({ replies, claudeRun, hook, pdf, exitCode: code, dir });
       });
     };
     host.stdout.on('data', (d) => {
@@ -46,6 +49,15 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
         if (msg.type === 'approval' && onApproval) {
           const allow = onApproval(msg);
           if (allow !== undefined) send({ type: 'approve', id: msg.id, allow });
+        }
+        if (msg.type === 'pdf_fetch' && onPdfFetch) {
+          const file = onPdfFetch(msg);
+          if (file.bytes) {
+            for (let i = 0; i < file.bytes.length; i += 4096) send({ type: 'pdf_chunk', id: msg.id, data: file.bytes.subarray(i, i + 4096).toString('base64') });
+            send({ type: 'pdf_end', id: msg.id, size: file.bytes.length, filename: file.filename });
+          } else {
+            send({ type: 'pdf_end', id: msg.id, ...file });
+          }
         }
         if (['done', 'error', 'pong', 'commits', 'summary', 'tickets'].includes(msg.type) || msg.type === stopAfter) end();
       }
@@ -63,7 +75,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
 describe('MantisAI helper', () => {
   test('ping reports the Claude CLI version', async () => {
     const { replies } = await talk({ type: 'ping' });
-    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.3.0', claudeVersion: '9.9.9 (Claude Code)' }]);
+    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.4.0', claudeVersion: '9.9.9 (Claude Code)' }]);
   });
 
   test('streams a reply and returns the conversation id', async () => {
@@ -302,5 +314,82 @@ describe('MantisAI helper: ticket digest', () => {
     }
     const { replies } = await run([page('new', [])]);
     assert.match(replies.at(-1).error, /whoami/);
+  });
+});
+
+describe('MantisAI helper: PDF attachments (read_pdf)', () => {
+  const hasPoppler = spawnSync('pdftoppm', ['-v']).status === 0;
+  const pdfFile = makePdf({ pages: [
+    { text: 'Login screen', annots: [{ subtype: 'Text', contents: 'Make button bigger', author: 'Rutu' }] },
+    { shape: true },
+  ] });
+
+  test('the PDF tool is a read and passes the gate; other local tools still do not', () => {
+    assert.equal(isReadOnly('mcp__mantis-pdf__read_pdf', { attachment_id: 1 }), true);
+    assert.equal(isReadOnly('mcp__mantis-pdf__other', {}), false);
+  });
+
+  test('only an extension that can download PDFs gets the tool', async () => {
+    const without = await talk({ type: 'chat', prompt: 'hi' });
+    assert.deepEqual(without.claudeRun.mcpServers, ['webmavens-projects']);
+    const { replies, pdf, claudeRun } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 6791 }, onPdfFetch: () => ({ error: 'stop here' }),
+    });
+    assert.equal(pdf.init.serverInfo.name, 'mantis-pdf');
+    assert.deepEqual(pdf.tools.map((t) => t.name), ['read_pdf']);
+    assert.match(pdf.tools[0].description, /page_from/);
+    assert.equal(pdf.decision.permissionDecision, 'allow');
+    assert.ok(replies.some((r) => r.type === 'tool' && r.tool === 'read_pdf'));
+    assert.deepEqual(claudeRun.mcpServers, ['webmavens-projects', 'mantis-pdf']);
+    assert.equal(claudeRun.maxMcpTokens, '100000'); // page images fit in one result
+  });
+
+  test('downloads through the extension and returns metadata, labelled page images, text and annotations', { skip: !hasPoppler && 'poppler-utils not installed' }, async () => {
+    const fetches = [];
+    const { replies, pdf } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 6791 }, onPdfFetch: (msg) => { fetches.push(msg); return { bytes: pdfFile, filename: 'phone app feedback.pdf' }; },
+    });
+    assert.deepEqual(fetches.map((m) => m.attachmentId), [6791]);
+    const [meta, ...rest] = pdf.result.content;
+    const item = JSON.parse(meta.text);
+    assert.equal(item.id, 6791);
+    assert.equal(item.filename, 'phone app feedback.pdf');
+    assert.equal(item.mime, 'application/pdf');
+    assert.equal(item.page_count, 2);
+    assert.deepEqual(item.pages_returned, [1, 2]);
+    assert.equal(item.has_more_pages, false);
+    assert.equal(item.image_included, true);
+    assert.match(item.text_content, /Login screen/);
+    assert.deepEqual(item.annotations.map((a) => [a.page, a.type, a.author, a.text]), [[1, 'Text', 'Rutu', 'Make button bigger']]);
+    assert.deepEqual(rest.map((c) => c.type === 'text' ? c.text : c.mimeType), ['Page 1 of 2', 'image/jpeg', 'Page 2 of 2', 'image/jpeg']);
+    assert.ok(!pdf.result.isError);
+    assert.equal(replies.at(-1).type, 'done');
+  });
+
+  test('a user Mantis refuses gets an error, not the file', async () => {
+    const { pdf } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 42 }, onPdfFetch: () => ({ error: 'You do not have access to attachment 42 in Mantis (HTTP 403).' }),
+    });
+    assert.equal(pdf.result.isError, true);
+    assert.match(pdf.result.content[0].text, /attachment 42.*HTTP 403/);
+    assert.equal(pdf.result.content.length, 1);
+  });
+
+  test('a PDF over 50 MB is not converted', async () => {
+    const { pdf } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 7 }, onPdfFetch: () => ({ tooLarge: true, size: 60 * 1024 * 1024, filename: 'big.pdf' }),
+    });
+    const item = JSON.parse(pdf.result.content[0].text);
+    assert.match(item.preview_error, /larger than 50 MB/);
+    assert.equal(item.image_included, false);
+  });
+
+  test('bad arguments are refused before anything is downloaded', async () => {
+    let fetched = false;
+    const { pdf } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 'abc' }, onPdfFetch: () => { fetched = true; return { error: 'no' }; },
+    });
+    assert.equal(pdf.result.isError, true);
+    assert.equal(fetched, false);
   });
 });

@@ -11,7 +11,20 @@ const HARNESS = fs.readFileSync(new URL('tests/ui/harness.html', ROOT), 'utf8');
 const chromePath = findChrome();
 let browser;
 
+// Attachment downloads for read_pdf: a PDF, one the user may not open, a login redirect, one too large.
+const PDF_BYTES = Buffer.from(`%PDF-1.4\n${'x'.repeat(1500000)}\n%%EOF\n`, 'latin1');
+const attachments = {
+  6791: () => ({ body: PDF_BYTES, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': "attachment; filename=\"phone app feedback.pdf\"; filename*=UTF-8''phone%20app%20feedback.pdf" } }),
+  42: () => ({ status: 403, body: 'Forbidden' }),
+  9: () => ({ status: 302, body: '', headers: { Location: 'https://projects.webmavens.dev/login' } }),
+  77: () => ({ body: '', headers: { 'Content-Type': 'application/pdf', 'Content-Length': String(60 * 1024 * 1024) } }),
+};
+
 const routes = {
+  'https://projects.webmavens.dev/attachments/': ({ url }) => {
+    const id = /\/attachments\/(\d+)\/download$/.exec(new URL(url).pathname)?.[1];
+    return (attachments[id] || (() => ({ status: 404, body: 'Not found' })))();
+  },
   'https://projects.webmavens.dev/': ({ url }) => {
     const file = new URL(url).pathname.slice(1);
     if (['content.js', 'button-styles.js', 'mantis-ai.js'].includes(file)) {
@@ -267,6 +280,36 @@ describe('MantisAI panel', { skip: !chromePath && 'no Chrome/Chromium found (set
       return ai.querySelector('.notice')?.textContent;
     });
     assert.match(notice, /isn't signed in to it\. In a terminal run claude, type \/mcp, and sign in to webmavens-projects/);
+    await page.close();
+  });
+
+  test('read_pdf: the page downloads attachments with the user\'s session and sends them back in chunks', async () => {
+    const page = await openMantis('tickets/123?ai=pdf');
+    const r = await run(page, async () => {
+      const ai = T.ai();
+      ai.querySelector('.edge-tab').click(); await T.wait(50);
+      ai.querySelector('.suggestion').click(); await T.wait(1200);
+      const sent = T.aiPorts[0].sent.filter((m) => m.type.startsWith('pdf_'));
+      const chunks = sent.filter((m) => m.type === 'pdf_chunk' && m.id === 1);
+      const bytes = chunks.map((m) => atob(m.data)).join('');
+      return {
+        step: [...ai.querySelectorAll('.step')].map((s) => s.textContent),
+        chunkCount: chunks.length,
+        size: bytes.length,
+        start: bytes.slice(0, 8),
+        ends: Object.fromEntries(sent.filter((m) => m.type === 'pdf_end').map(({ id, type, ...rest }) => [id, rest])),
+        otherChunks: sent.filter((m) => m.type === 'pdf_chunk' && m.id !== 1).length,
+      };
+    });
+    assert.deepEqual(r.step, ['Read PDF attachment 6791 from page 11']);
+    assert.equal(r.chunkCount, 2); // 1 MB per chunk
+    assert.equal(r.size, PDF_BYTES.length);
+    assert.equal(r.start, '%PDF-1.4');
+    assert.deepEqual(r.ends[1], { size: PDF_BYTES.length, filename: 'phone app feedback.pdf' });
+    assert.match(r.ends[2].error, /do not have access to attachment 42 .*HTTP 403/);
+    assert.match(r.ends[3].error, /redirect.*logged in/);
+    assert.deepEqual(r.ends[4], { tooLarge: true, size: 60 * 1024 * 1024 });
+    assert.equal(r.otherChunks, 0);
     await page.close();
   });
 });

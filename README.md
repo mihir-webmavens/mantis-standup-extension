@@ -39,6 +39,39 @@ Both are switched on in the toolbar popup → **Settings**, and shown on the
   stored on this computer for 90 days. Chrome asks to let the extension see your
   tabs when you turn it on.
 
+## MantisAI and PDF attachments
+
+MantisAI (the chat panel on Mantis pages) can read PDF attachments, such as client
+feedback with screenshots, drawn notes and sticky-note comments. Ask it something
+like *"read the PDF on this ticket"*. Its `read_pdf` tool returns:
+
+- **Page images:** 150 DPI JPEGs at most 1600px wide, at most 10 pages per call
+  (`page_from` / `page_to`, then `next_page_from` while `has_more_pages`).
+- **Text** (`text_content`) of those pages, capped at 50,000 characters
+  (`text_truncated`).
+- **Annotations:** sticky notes, comments, highlights and free text, with page,
+  type, author and date.
+
+How it works: the Mantis server only returns a link for PDFs, so the Mantis tab
+downloads the file from `/attachments/{id}/download` with your own session.
+Mantis therefore decides whether you may read it, the same as in the web UI. The
+MantisAI helper then converts it on this computer. Nothing is sent anywhere else.
+PDFs over 50 MB or 200 pages, password-protected ones and damaged ones come back
+with a `preview_error` instead.
+
+**Needs poppler-utils** (`pdfinfo`, `pdftoppm`, `pdftotext`) on the computer
+running the helper:
+
+```bash
+sudo apt install poppler-utils   # Debian/Ubuntu
+brew install poppler             # macOS
+```
+
+After updating the extension, click **Reinstall helper** in the toolbar popup →
+Settings → MantisAI once (helper 1.4.0 or newer). Converted pages are cached in
+the helper's folder (`~/.local/share/mantis-ai/pdf-cache`) by file content and
+removed after 7 days unused.
+
 ## Using with Claude Code
 
 The repo includes a `/standup` skill for [Claude Code](https://claude.com/claude-code)

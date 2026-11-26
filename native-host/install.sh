@@ -105,6 +105,10 @@ EOF
 done
 
 echo "Claude CLI: $CLAUDE ($("$CLAUDE" --version 2>/dev/null || echo 'version unknown'))"
+if ! command -v pdftoppm >/dev/null || ! command -v pdftotext >/dev/null || ! command -v pdfinfo >/dev/null; then
+  echo "Note: MantisAI reads PDF attachments with poppler-utils, which was not found."
+  echo "      Install it with: sudo apt install poppler-utils   (macOS: brew install poppler)"
+fi
 echo "MantisAI helper installed. In the extension popup, open Settings → MantisAI and click Check."
 exit 0
 

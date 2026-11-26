@@ -600,6 +600,7 @@ const MantisAI = (() => {
       chat: () => ({ rooms: 'Listed chat rooms', messages: 'Read chat messages', updates: 'Checked new chat messages', wait: 'Waited for chat replies',
         search: `Searched chat for “${input.query || ''}”`, send: 'Send a chat message', start_dm: 'Start a direct message', mark_read: 'Mark chat as read', react: `React ${input.emoji || ''} to a chat message` })[a],
       attachments: () => ({ list: `Listed attachments${t ? ` on ${t}` : ''}`, download: 'Opened attachments', upload: 'Upload a file', request_upload: 'Upload a file', attach: 'Attach files' })[a],
+      read_pdf: () => `Read PDF attachment ${input.attachment_id ?? ''}${input.page_from > 1 ? ` from page ${input.page_from}` : ''}`,
     };
     return known[tool]?.() || `${tool}${a ? ` · ${a}` : ''}${t ? ` ${t}` : ''}`;
   }
@@ -797,6 +798,8 @@ const MantisAI = (() => {
         if (!step) message.steps.push(step = { id: msg.toolUseId, tool: msg.tool, input: msg.input, status: 'running' });
         step.approval = { id: msg.id, state: 'pending' };
         if (target === chat) render();
+      } else if (msg.type === 'pdf_fetch') {
+        sendAttachment(port, msg.id, msg.attachmentId);
       } else if (msg.type === 'done') {
         target.sessionId = msg.sessionId || target.sessionId;
         if (msg.text) message.text = msg.text;
@@ -810,6 +813,58 @@ const MantisAI = (() => {
     port.postMessage({ type: 'send', prompt, sessionId: target.sessionId, context: pageContext() });
     saveChat(target);
     render();
+  }
+
+  // ---------- PDF attachments for read_pdf ----------
+  // The helper asks for an attachment; this tab downloads it from Mantis with the
+  // user's own session (so Mantis decides whether they may read it), without
+  // following redirects, and sends it back in base64 chunks.
+
+  const PDF_MAX_BYTES = 50 * 1024 * 1024;
+  const PDF_CHUNK_BYTES = 1024 * 1024;
+
+  function attachmentFilename(disposition) {
+    const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(disposition || '');
+    if (star) {
+      try { return decodeURIComponent(star[1].trim()); } catch { /* fall through */ }
+    }
+    const plain = /filename\s*=\s*"?([^";]+)"?/.exec(disposition || '');
+    return plain ? plain[1].trim() : undefined;
+  }
+
+  function toBase64(bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  }
+
+  async function sendAttachment(port, id, attachmentId) {
+    const post = (msg) => {
+      try { port.postMessage({ ...msg, id }); } catch { /* the chat ended */ }
+    };
+    if (!Number.isInteger(attachmentId) || attachmentId <= 0) return post({ type: 'pdf_end', error: 'Invalid attachment id.' });
+    try {
+      const res = await fetch(`${location.origin}/attachments/${attachmentId}/download`, { credentials: 'same-origin', redirect: 'manual' });
+      if (res.type === 'opaqueredirect') {
+        return post({ type: 'pdf_end', error: 'Mantis answered with a redirect instead of the file. Check that you are still logged in to Mantis and can open this attachment.' });
+      }
+      if (!res.ok) {
+        const denied = res.status === 401 || res.status === 403 || res.status === 404;
+        return post({ type: 'pdf_end', error: denied ? `You do not have access to attachment ${attachmentId} in Mantis (HTTP ${res.status}).` : `Mantis answered HTTP ${res.status}.` });
+      }
+      const filename = attachmentFilename(res.headers.get('content-disposition'));
+      const declared = Number(res.headers.get('content-length'));
+      if (declared > PDF_MAX_BYTES) {
+        res.body?.cancel().catch(() => {});
+        return post({ type: 'pdf_end', tooLarge: true, size: declared, filename });
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length > PDF_MAX_BYTES) return post({ type: 'pdf_end', tooLarge: true, size: bytes.length, filename });
+      for (let i = 0; i < bytes.length; i += PDF_CHUNK_BYTES) post({ type: 'pdf_chunk', data: toBase64(bytes.subarray(i, i + PDF_CHUNK_BYTES)) });
+      post({ type: 'pdf_end', size: bytes.length, filename });
+    } catch (err) {
+      post({ type: 'pdf_end', error: `The download failed: ${err.message}` });
+    }
   }
 
   // Stops the shown conversation's reply, keeping what arrived so far.

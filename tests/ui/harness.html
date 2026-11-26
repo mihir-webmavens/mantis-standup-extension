@@ -87,8 +87,18 @@
               port.sent.push(structuredClone(msg));
               const reply = (m) => { if (!port.disconnected) listeners.message.forEach((f) => f(m)); };
               if (msg.type === 'approve') return port.onApprove?.(msg);
+              if (msg.type === 'pdf_chunk' || msg.type === 'pdf_end') return; // the page's downloads, kept in `sent`
               const mode = q.get('ai') || 'reply';
               await T.wait(30);
+              if (mode === 'pdf') {
+                // The helper asks the page for attachments: readable, refused, and redirected to login.
+                reply({ type: 'session', sessionId: '11111111-2222-4333-8444-555555555555' });
+                reply({ type: 'tool', id: 'toolu_1', tool: 'read_pdf', input: { attachment_id: 6791, page_from: 11 } });
+                for (const [id, attachmentId] of [[1, 6791], [2, 42], [3, 9], [4, 77]]) reply({ type: 'pdf_fetch', id, attachmentId });
+                await T.wait(500);
+                reply({ type: 'tool_result', id: 'toolu_1', isError: false });
+                return reply({ type: 'done', sessionId: '11111111-2222-4333-8444-555555555555', text: 'Read it.' });
+              }
               if (mode === 'noauth') reply({ type: 'mantis', status: 'needs-auth' });
               if (mode === 'lookup' || mode === 'approve') {
                 reply({ type: 'session', sessionId: '11111111-2222-4333-8444-555555555555' });

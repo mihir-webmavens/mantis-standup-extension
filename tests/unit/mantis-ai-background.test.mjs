@@ -120,6 +120,49 @@ describe('MantisAI approvals', () => {
     assert.equal(port.received.at(-1).type, 'done');
   });
 
+  test('PDFs: the helper\'s download request reaches the page and the file reaches the helper', async () => {
+    const toHost = [];
+    const host = (request, reply) => {
+      if (request.type === 'chat') {
+        reply({ type: 'tool', id: 'toolu_1', tool: 'read_pdf', input: { attachment_id: 6791 } });
+        reply({ type: 'pdf_fetch', id: 1, attachmentId: 6791 });
+      } else {
+        toHost.push(request);
+        if (request.type === 'pdf_end') reply({ type: 'done', sessionId: SESSION, text: 'Read.' });
+      }
+    };
+    const bg = loadBackground({ nativeMessaging: true, nativeHost: host });
+    const port = { name: 'mantis-ai', received: [], onMessage: { listeners: [] }, onDisconnect: { listeners: [] } };
+    port.onMessage.addListener = (f) => port.onMessage.listeners.push(f);
+    port.onDisconnect.addListener = (f) => port.onDisconnect.listeners.push(f);
+    port.postMessage = (m) => port.received.push(plain(m));
+    await bg.events.connect.fire(port);
+    await Promise.all(port.onMessage.listeners.map((f) => f({ type: 'send', prompt: 'Read the PDF', context })));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(plain(bg.state.nativePorts[0].received[0].features), ['pdf']);
+    assert.deepEqual(port.received.map((m) => m.type), ['tool', 'pdf_fetch']);
+    assert.deepEqual(port.received[1], { type: 'pdf_fetch', id: 1, attachmentId: 6791 });
+
+    const send = (m) => Promise.all(port.onMessage.listeners.map((f) => f(m)));
+    await send({ type: 'pdf_chunk', id: 1, data: 'JVBERi0=', extra: 'dropped' });
+    await send({ type: 'pdf_end', id: 1, size: 5, filename: 'a.pdf' });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(plain(toHost), [
+      { type: 'pdf_chunk', id: 1, data: 'JVBERi0=' },
+      { type: 'pdf_end', id: 1, tooLarge: false, size: 5, filename: 'a.pdf' },
+    ]);
+    assert.equal(port.received.at(-1).type, 'done');
+  });
+
+  test('the system prompt explains read_pdf and its paging', async () => {
+    const bg = loadBackground({ nativeMessaging: true, nativeHost: replyingHost });
+    await bg.chat({ type: 'send', prompt: 'hi', context });
+    const { system } = bg.state.nativePorts[0].received[0];
+    assert.match(system, /Use read_pdf with the attachment id/);
+    assert.match(system, /page_from\/page_to/);
+    assert.match(system, /next_page_from/);
+  });
+
   test('the system prompt explains the Mantis tools and approvals', async () => {
     const bg = loadBackground({ nativeMessaging: true, nativeHost: replyingHost });
     await bg.chat({ type: 'send', prompt: 'hi', context });
