@@ -11,9 +11,14 @@ const HARNESS = fs.readFileSync(new URL('tests/ui/harness.html', ROOT), 'utf8');
 const chromePath = findChrome();
 let browser;
 
-// Attachment downloads for read_pdf: a PDF, one the user may not open, a login redirect, one too large.
+// Attachment downloads for read_pdf: a PDF, one the user may not open, a login redirect, one too large,
+// a redirect to the stored file on another host (no CORS, like Mantis), and a page instead of the file.
 const PDF_BYTES = Buffer.from(`%PDF-1.4\n${'x'.repeat(1500000)}\n%%EOF\n`, 'latin1');
+const SMALL_PDF = Buffer.from('%PDF-1.4\nsmall\n%%EOF\n', 'latin1');
+const htmlPage = { body: '<html>Mantis</html>', headers: { 'Content-Type': 'text/html; charset=utf-8' } };
 const attachments = {
+  55: () => ({ status: 302, body: '', headers: { Location: 'https://files.storage.test/55.pdf?signature=abc' } }),
+  66: () => htmlPage,
   6791: () => ({ body: PDF_BYTES, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': "attachment; filename=\"phone app feedback.pdf\"; filename*=UTF-8''phone%20app%20feedback.pdf" } }),
   42: () => ({ status: 403, body: 'Forbidden' }),
   9: () => ({ status: 302, body: '', headers: { Location: 'https://projects.webmavens.dev/login' } }),
@@ -21,6 +26,7 @@ const attachments = {
 };
 
 const routes = {
+  'https://files.storage.test/': () => ({ body: SMALL_PDF, headers: { 'Content-Type': 'application/pdf' } }),
   'https://projects.webmavens.dev/attachments/': ({ url }) => {
     const id = /\/attachments\/(\d+)\/download$/.exec(new URL(url).pathname)?.[1];
     return (attachments[id] || (() => ({ status: 404, body: 'Not found' })))();
@@ -288,7 +294,7 @@ describe('MantisAI panel', { skip: !chromePath && 'no Chrome/Chromium found (set
     const r = await run(page, async () => {
       const ai = T.ai();
       ai.querySelector('.edge-tab').click(); await T.wait(50);
-      ai.querySelector('.suggestion').click(); await T.wait(1200);
+      ai.querySelector('.suggestion').click(); await T.wait(1500);
       const sent = T.aiPorts[0].sent.filter((m) => m.type.startsWith('pdf_'));
       const chunks = sent.filter((m) => m.type === 'pdf_chunk' && m.id === 1);
       const bytes = chunks.map((m) => atob(m.data)).join('');
@@ -299,6 +305,7 @@ describe('MantisAI panel', { skip: !chromePath && 'no Chrome/Chromium found (set
         start: bytes.slice(0, 8),
         ends: Object.fromEntries(sent.filter((m) => m.type === 'pdf_end').map(({ id, type, ...rest }) => [id, rest])),
         otherChunks: sent.filter((m) => m.type === 'pdf_chunk' && m.id !== 1).length,
+        downloads: sent.filter((m) => m.type === 'pdf_download').map(({ id, attachmentId }) => ({ id, attachmentId })).sort((a, b) => a.id - b.id),
       };
     });
     assert.deepEqual(r.step, ['Read PDF attachment 6791 from page 11']);
@@ -307,8 +314,12 @@ describe('MantisAI panel', { skip: !chromePath && 'no Chrome/Chromium found (set
     assert.equal(r.start, '%PDF-1.4');
     assert.deepEqual(r.ends[1], { size: PDF_BYTES.length, filename: 'phone app feedback.pdf' });
     assert.match(r.ends[2].error, /do not have access to attachment 42 .*HTTP 403/);
-    assert.match(r.ends[3].error, /redirect.*logged in/);
+    assert.match(r.ends[3].error, /login page: log in to Mantis/);
     assert.deepEqual(r.ends[4], { tooLarge: true, size: 60 * 1024 * 1024 });
+    // The browser blocks the cross-host redirect, and a page is not the file: the extension downloads those.
+    assert.deepEqual(r.downloads, [{ id: 5, attachmentId: 55 }, { id: 6, attachmentId: 66 }]);
+    assert.equal(r.ends[5], undefined);
+    assert.equal(r.ends[6], undefined);
     assert.equal(r.otherChunks, 0);
     await page.close();
   });

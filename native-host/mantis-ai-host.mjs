@@ -13,6 +13,8 @@
 //   in   chat with features: ['pdf'] adds the read_pdf tool; while it runs:
 //   out  { type: 'pdf_fetch', id, attachmentId }   (the Mantis tab downloads the attachment)
 //   in   { type: 'pdf_chunk', id, data } … { type: 'pdf_end', id, size, filename? | error | tooLarge }
+//        or { type: 'pdf_end', id, path } (Chrome downloaded it to <Downloads>/mantis-ai-pdf/:
+//        we read that file and delete it)
 //   in   { type: 'commits', repos, since, until }   (EOD from commits: full repo paths, ISO times)
 //   out  { type: 'commits', commits: [{ repo, hash, date, message }], errors: [{ repo, error }] }
 //   in   { type: 'summarize', prompt, system, model? }
@@ -48,7 +50,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
-const HOST_VERSION = '1.4.0';
+const HOST_VERSION = '1.5.0';
 const HOST_FILE = fileURLToPath(import.meta.url);
 const CLAUDE = process.env.MANTIS_AI_CLAUDE || 'claude';
 const GIT = process.env.MANTIS_AI_GIT || 'git';
@@ -325,6 +327,12 @@ function chat({ prompt, system, sessionId, model, features }) {
         done(null, { tooLarge: true, size: Number(msg.size) || 0 });
       } else if (msg.error) {
         done(new Error(String(msg.error).slice(0, 300)));
+      } else if (msg.path) {
+        try {
+          done(null, readDownloadedPdf(msg.path, attachmentId));
+        } catch (err) {
+          done(err);
+        }
       } else {
         done(null, { bytes: Buffer.concat(chunks), filename: typeof msg.filename === 'string' ? msg.filename.slice(0, 255) : undefined });
       }
@@ -801,6 +809,26 @@ function classify(detail, sessionId) {
 }
 
 // ---------- PDF attachments ----------
+
+// A PDF Chrome downloaded for us (the extension names it
+// <Downloads>/mantis-ai-pdf/attachment-<id>-<time>.pdf). Only such a file, for the
+// attachment asked for, is read; it is deleted right after.
+export function readDownloadedPdf(file, attachmentId) {
+  const p = String(file || '');
+  const name = path.basename(p);
+  const ok = path.isAbsolute(p) && path.basename(path.dirname(p)) === PDF_DOWNLOAD_DIR
+    && new RegExp(`^attachment-${Number(attachmentId)}-\\d+(?: \\(\\d+\\))?\\.pdf$`).test(name);
+  if (!ok) throw new Error('The browser saved the attachment somewhere unexpected.');
+  const stat = fs.lstatSync(p, { throwIfNoEntry: false });
+  if (!stat?.isFile()) throw new Error('The downloaded attachment was not found.');
+  try {
+    if (stat.size > PDF_MAX_BYTES) return { tooLarge: true, size: stat.size };
+    return { bytes: fs.readFileSync(p) };
+  } finally {
+    fs.rmSync(p, { force: true });
+    try { fs.rmdirSync(path.dirname(p)); } catch { /* other downloads still there */ }
+  }
+}
 // read_pdf: page images (pdftoppm), text (pdftotext -layout) and annotations
 // (read from the PDF's /Annots here, without a dependency) for one attachment.
 // poppler-utils does the rendering: it is a packaged, sandbox-free command-line
@@ -811,6 +839,7 @@ function classify(detail, sessionId) {
 // on every call, so Mantis decides each time whether they may read it.
 
 export const PDF_MAX_BYTES = 50 * 1024 * 1024;
+export const PDF_DOWNLOAD_DIR = 'mantis-ai-pdf';
 export const PDF_MAX_PAGES = 200;
 const PDF_PAGES_PER_CALL = 10;
 const PDF_TEXT_LIMIT = 50000;

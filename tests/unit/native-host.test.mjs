@@ -2,7 +2,7 @@
 // Chrome's native messaging framing with a fake Claude CLI (fixtures/fake-claude.mjs).
 
 import { test, describe } from 'node:test';
-import { isReadOnly, isDigestCall } from '../../native-host/mantis-ai-host.mjs';
+import { isReadOnly, isDigestCall, readDownloadedPdf } from '../../native-host/mantis-ai-host.mjs';
 import { makePdf } from '../helpers/pdf.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -75,7 +75,7 @@ function talk(request, { mode = 'reply', claude = FAKE_CLAUDE, stopAfter, tool, 
 describe('MantisAI helper', () => {
   test('ping reports the Claude CLI version', async () => {
     const { replies } = await talk({ type: 'ping' });
-    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.4.0', claudeVersion: '9.9.9 (Claude Code)' }]);
+    assert.deepEqual(replies, [{ type: 'pong', hostVersion: '1.5.0', claudeVersion: '9.9.9 (Claude Code)' }]);
   });
 
   test('streams a reply and returns the conversation id', async () => {
@@ -382,6 +382,46 @@ describe('MantisAI helper: PDF attachments (read_pdf)', () => {
     const item = JSON.parse(pdf.result.content[0].text);
     assert.match(item.preview_error, /larger than 50 MB/);
     assert.equal(item.image_included, false);
+  });
+
+  test('a PDF Chrome downloaded is read from its file, which is then deleted', { skip: !hasPoppler && 'poppler-utils not installed' }, async () => {
+    const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-downloads-'));
+    const dir = path.join(downloads, 'mantis-ai-pdf');
+    fs.mkdirSync(dir);
+    const file = path.join(dir, 'attachment-6791-1700000000000.pdf');
+    fs.writeFileSync(file, pdfFile);
+    const { pdf } = await talk({ type: 'chat', prompt: 'read it', features: ['pdf'] }, {
+      mode: 'pdf', tool: { attachment_id: 6791 }, onPdfFetch: () => ({ path: file, size: pdfFile.length }),
+    });
+    assert.ok(!pdf.result.isError, pdf.result.content[0].text);
+    const item = JSON.parse(pdf.result.content[0].text);
+    assert.equal(item.page_count, 2);
+    assert.match(item.text_content, /Login screen/);
+    assert.equal(fs.existsSync(file), false);
+    assert.equal(fs.existsSync(dir), false); // the empty folder goes too
+    fs.rmSync(downloads, { recursive: true, force: true });
+  });
+
+  test('only the downloaded file for the attachment asked for is read', () => {
+    const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'mantis-ai-downloads-'));
+    const dir = path.join(downloads, 'mantis-ai-pdf');
+    fs.mkdirSync(dir);
+    const other = path.join(downloads, 'secret.pdf');
+    fs.writeFileSync(other, 'secret');
+    const wrongId = path.join(dir, 'attachment-1-1.pdf');
+    fs.writeFileSync(wrongId, 'x');
+    const link = path.join(dir, 'attachment-5-1.pdf');
+    fs.symlinkSync(other, link);
+    assert.throws(() => readDownloadedPdf(other, 5), /somewhere unexpected/);
+    assert.throws(() => readDownloadedPdf(wrongId, 5), /somewhere unexpected/);
+    assert.throws(() => readDownloadedPdf('mantis-ai-pdf/attachment-5-1.pdf', 5), /somewhere unexpected/);
+    assert.throws(() => readDownloadedPdf(link, 5), /not found/);
+    assert.equal(fs.readFileSync(other, 'utf8'), 'secret');
+    const uniquified = path.join(dir, 'attachment-5-1 (1).pdf');
+    fs.writeFileSync(uniquified, '%PDF');
+    assert.equal(readDownloadedPdf(uniquified, 5).bytes.toString(), '%PDF');
+    assert.equal(fs.existsSync(uniquified), false);
+    fs.rmSync(downloads, { recursive: true, force: true });
   });
 
   test('bad arguments are refused before anything is downloaded', async () => {

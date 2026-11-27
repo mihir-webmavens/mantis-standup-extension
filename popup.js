@@ -998,11 +998,31 @@ const ai = {
   error: document.querySelector('.ai-error'),
   model: document.querySelector('#ai-model'),
   reinstall: document.querySelector('#ai-reinstall'),
+  pdf: document.querySelector('.ai-pdf'),
+  pdfText: document.querySelector('.ai-pdf-text'),
+  pdfAllow: document.querySelector('#ai-pdf'),
 };
+const AI_PDF_HOST_VERSION = [1, 5, 0]; // the helper that reads PDFs Chrome downloaded
 const AI_MODEL_KEY = 'mantisAiModel';
 const AI_INSTALLER = 'mantis-ai-install.sh';
 
-function renderAi({ status, claudeVersion, error }) {
+const versionBelow = (version, min) => {
+  const parts = String(version || '0').split('.').map(Number);
+  for (let i = 0; i < min.length; i++) if ((parts[i] || 0) !== min[i]) return (parts[i] || 0) < min[i];
+  return false;
+};
+
+// PDF reading needs the optional 'downloads' permission and a helper from 1.5.0 on.
+async function renderAiPdf({ status, hostVersion }) {
+  const granted = await chrome.permissions.contains({ permissions: ['downloads'] }).catch(() => false);
+  const oldHelper = status === 'ready' && versionBelow(hostVersion, AI_PDF_HOST_VERSION);
+  ai.pdf.hidden = status !== 'ready' || (granted && !oldHelper);
+  ai.pdfAllow.hidden = granted;
+  if (oldHelper && granted) ai.pdfText.textContent = 'To read PDF attachments, MantisAI needs the newer helper: click Reinstall helper and run the installer again.';
+}
+
+function renderAi({ status, claudeVersion, hostVersion, error }) {
+  renderAiPdf({ status, hostVersion });
   const labels = { ready: 'Ready', disabled: 'Not set up', 'not-installed': 'Helper not installed', forbidden: 'Reinstall needed', error: 'Not working', checking: 'Checking…' };
   const current = { disabled: 'allow', 'not-installed': 'install', forbidden: 'install', error: 'check' }[status];
   const order = ['allow', 'install', 'check'];
@@ -1052,8 +1072,14 @@ function showMantisAi() {
 
 // Asked straight from the click, like notifications (Chrome requires a user gesture).
 ai.allow.addEventListener('click', () => {
-  chrome.permissions.request({ permissions: ['nativeMessaging'] }).catch(() => false).then((granted) => {
+  chrome.permissions.request({ permissions: ['nativeMessaging', 'downloads'] }).catch(() => false).then((granted) => {
     if (!granted) return showStatus('MantisAI needs this permission to reach the helper.', true);
+    checkAi();
+  });
+});
+ai.pdfAllow.addEventListener('click', () => {
+  chrome.permissions.request({ permissions: ['downloads'] }).catch(() => false).then((granted) => {
+    showStatus(granted ? 'MantisAI can read PDF attachments now' : 'Without it MantisAI cannot read PDF attachments.', !granted);
     checkAi();
   });
 });

@@ -79,8 +79,10 @@ function fakePort(name) {
  * plays the helper (reply(msg) sends to the extension); `hostError` makes connecting fail
  * the way Chrome reports it (e.g. 'Specified native messaging host not found.').
  */
-export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError, tracking = false, browser = {} } = {}) {
-  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, local: {}, nativePorts: [] };
+/* `downloads(options)` grants the optional downloads permission and plays Chrome's download:
+ * it returns the finished item ({ state, filename, mime, finalUrl, error, … }). */
+export function loadBackground({ server = fakeStandupServer(), storage = {}, notifications = false, tabMessage, nativeMessaging = false, nativeHost, hostError, tracking = false, browser = {}, downloads } = {}) {
+  const state = { badge: { text: '', title: '', color: null }, alarms: {}, notes: {}, tabs: [], popupOpened: 0, tabMessages: [], session: {}, local: {}, nativePorts: [], downloads: [], erased: [], removedFiles: [] };
   // Time tracker: `tracking: true` grants the tabs + idle permissions; `browser` is what
   // Chrome reports (the focused tab, whether a Chrome window has focus, the idle state).
   state.browser = { tab: null, focused: true, idle: 'active', ...browser };
@@ -142,7 +144,7 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
     permissions: {
       onAdded: events.permAdded,
       contains: async ({ permissions }) => permissions.every((p) => (p === 'nativeMessaging' ? nativeMessaging : p === 'notifications' ? notifications
-        : p === 'tabs' || p === 'idle' ? tracking : false)),
+        : p === 'tabs' || p === 'idle' ? tracking : p === 'downloads' ? Boolean(downloads) : false)),
     },
     tabs: {
       create: ({ url }) => { state.tabs.push(url); },
@@ -166,6 +168,27 @@ export function loadBackground({ server = fakeStandupServer(), storage = {}, not
       onStateChanged: events.idleChanged,
     } : undefined,
     notifications: notifications ? notificationsApi : undefined,
+    downloads: downloads ? (() => {
+      const items = new Map();
+      const changed = event();
+      changed.removeListener = (f) => { const i = changed.listeners.indexOf(f); if (i >= 0) changed.listeners.splice(i, 1); };
+      return {
+        download: async (options) => {
+          const id = state.downloads.push(plain(options));
+          items.set(id, { id, url: options.url, state: 'in_progress' });
+          setTimeout(() => {
+            items.set(id, { id, url: options.url, ...downloads(options) });
+            changed.fire({ id, state: { current: items.get(id).state } });
+          }, 5);
+          return id;
+        },
+        search: async ({ id }) => (items.has(id) ? [items.get(id)] : []),
+        erase: async ({ id }) => { state.erased.push(id); },
+        removeFile: async (id) => { state.removedFiles.push(id); },
+        cancel: async () => {},
+        onChanged: changed,
+      };
+    })() : undefined,
   };
   const context = vm.createContext({ chrome, fetch: server.fetch, URL, URLSearchParams, console, setTimeout, clearTimeout, Date });
   vm.runInContext(BACKGROUND, context, { filename: 'background.js' });

@@ -817,8 +817,8 @@ const MantisAI = (() => {
 
   // ---------- PDF attachments for read_pdf ----------
   // The helper asks for an attachment; this tab downloads it from Mantis with the
-  // user's own session (so Mantis decides whether they may read it), without
-  // following redirects, and sends it back in base64 chunks.
+  // user's own session (so Mantis decides whether they may read it) and sends it
+  // back in base64 chunks, or asks the extension to download it (pdf_download).
 
   const PDF_MAX_BYTES = 50 * 1024 * 1024;
   const PDF_CHUNK_BYTES = 1024 * 1024;
@@ -838,20 +838,40 @@ const MantisAI = (() => {
     return btoa(binary);
   }
 
+  // Mantis answers the download with a redirect to the stored file, which is on
+  // another host: a fetch from this page then fails (CORS), while a normal browser
+  // download works. So the page tries first, and when the browser blocks it, the
+  // extension downloads the file the way a click on the link does (chrome.downloads,
+  // with the user's session) and the helper reads that file.
+  async function fetchAttachment(attachmentId) {
+    let res;
+    try {
+      res = await fetch(`${location.origin}/attachments/${attachmentId}/download`, { credentials: 'same-origin', redirect: 'follow', headers: { Accept: 'application/pdf,application/octet-stream,*/*' } });
+    } catch {
+      return { blocked: true };
+    }
+    if (res.status === 401 || res.status === 403 || res.status === 404) return { denied: res.status };
+    if (/\/login\b/.test(new URL(res.url).pathname)) return { loggedOut: true };
+    if (!res.ok) return { error: `Mantis answered HTTP ${res.status}.` };
+    const type = (res.headers.get('content-type') || '').toLowerCase();
+    if (type.includes('text/html') || type.includes('application/json')) {
+      res.body?.cancel().catch(() => {});
+      return { blocked: true }; // not the file itself: let the browser download it
+    }
+    return { res };
+  }
+
   async function sendAttachment(port, id, attachmentId) {
     const post = (msg) => {
       try { port.postMessage({ ...msg, id }); } catch { /* the chat ended */ }
     };
     if (!Number.isInteger(attachmentId) || attachmentId <= 0) return post({ type: 'pdf_end', error: 'Invalid attachment id.' });
     try {
-      const res = await fetch(`${location.origin}/attachments/${attachmentId}/download`, { credentials: 'same-origin', redirect: 'manual' });
-      if (res.type === 'opaqueredirect') {
-        return post({ type: 'pdf_end', error: 'Mantis answered with a redirect instead of the file. Check that you are still logged in to Mantis and can open this attachment.' });
-      }
-      if (!res.ok) {
-        const denied = res.status === 401 || res.status === 403 || res.status === 404;
-        return post({ type: 'pdf_end', error: denied ? `You do not have access to attachment ${attachmentId} in Mantis (HTTP ${res.status}).` : `Mantis answered HTTP ${res.status}.` });
-      }
+      const { res, denied, loggedOut, blocked, error } = await fetchAttachment(attachmentId);
+      if (denied) return post({ type: 'pdf_end', error: `You do not have access to attachment ${attachmentId} in Mantis (HTTP ${denied}).` });
+      if (loggedOut) return post({ type: 'pdf_end', error: 'Mantis sent the download to the login page: log in to Mantis in this browser and try again.' });
+      if (blocked) return post({ type: 'pdf_download', attachmentId });
+      if (error) return post({ type: 'pdf_end', error });
       const filename = attachmentFilename(res.headers.get('content-disposition'));
       const declared = Number(res.headers.get('content-length'));
       if (declared > PDF_MAX_BYTES) {

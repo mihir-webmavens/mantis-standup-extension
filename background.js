@@ -580,6 +580,82 @@ function mantisAiSystemPrompt(context) {
   return lines.filter((l) => l !== '').join('\n');
 }
 
+// PDF attachments Mantis serves through a redirect to its file storage: a fetch from
+// the Mantis page is blocked there (CORS), so Chrome downloads the file the way a click
+// on the link does, with the user's session, into <Downloads>/mantis-ai-pdf/. The
+// helper reads that file and deletes it; the entry is removed from Chrome's list.
+// Needs the optional 'downloads' permission (Settings → MantisAI).
+const MANTIS_ORIGIN = 'https://projects.webmavens.dev';
+const PDF_DOWNLOAD_DIR = 'mantis-ai-pdf';
+const PDF_DOWNLOAD_TIMEOUT_MS = 110 * 1000; // the helper gives up after 2 minutes
+const PDF_DOWNLOAD_PERMISSION = 'MantisAI needs permission to download PDF attachments: open the extension\'s toolbar popup → Settings → MantisAI and click "Allow PDF reading", then ask again.';
+const DOWNLOAD_ERRORS = {
+  SERVER_UNAUTHORIZED: 'Mantis did not let this browser download it (unauthorized): check that you are logged in to Mantis and can open this attachment.',
+  SERVER_FORBIDDEN: 'You do not have access to this attachment in Mantis.',
+  SERVER_BAD_CONTENT: 'Mantis did not find this attachment.',
+  FILE_TOO_LARGE: 'The attachment is too large to download.',
+};
+
+function waitForDownload(downloadId) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (item) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.downloads.onChanged.removeListener(onChanged);
+      resolve(item);
+    };
+    const check = async () => {
+      const [item] = await chrome.downloads.search({ id: downloadId }).catch(() => []);
+      if (!item || item.state !== 'in_progress') finish(item || null);
+    };
+    const onChanged = (delta) => {
+      if (delta.id === downloadId && delta.state && delta.state.current !== 'in_progress') check();
+    };
+    const timer = setTimeout(() => {
+      chrome.downloads.cancel(downloadId).catch(() => {});
+      finish({ state: 'interrupted', error: 'TIMEOUT' });
+    }, PDF_DOWNLOAD_TIMEOUT_MS);
+    chrome.downloads.onChanged.addListener(onChanged);
+    check();
+  });
+}
+
+async function downloadAttachment(attachmentId) {
+  if (!Number.isInteger(attachmentId) || attachmentId <= 0) return { error: 'Invalid attachment id.' };
+  if (!chrome.downloads || !(await chrome.permissions.contains({ permissions: ['downloads'] }).catch(() => false))) {
+    return { error: PDF_DOWNLOAD_PERMISSION };
+  }
+  let downloadId;
+  try {
+    downloadId = await chrome.downloads.download({
+      url: `${MANTIS_ORIGIN}/attachments/${attachmentId}/download`,
+      filename: `${PDF_DOWNLOAD_DIR}/attachment-${attachmentId}-${Date.now()}.pdf`,
+      conflictAction: 'uniquify',
+      saveAs: false,
+    });
+  } catch (err) {
+    return { error: `Chrome could not start the download: ${err.message}` };
+  }
+  const item = await waitForDownload(downloadId);
+  const forget = () => chrome.downloads.erase({ id: downloadId }).catch(() => {});
+  if (!item || item.state !== 'complete') {
+    forget();
+    const code = item?.error || 'UNKNOWN';
+    if (code === 'TIMEOUT') return { error: 'The download took too long.' };
+    return { error: DOWNLOAD_ERRORS[code] || `Chrome could not download it (${code}).` };
+  }
+  const finalPath = (() => { try { return new URL(item.finalUrl || item.url).pathname; } catch { return ''; } })();
+  if (/\/login\b/.test(finalPath) || /text\/html/i.test(item.mime || '')) {
+    await chrome.downloads.removeFile(downloadId).catch(() => {});
+    forget();
+    return { error: 'Mantis sent the download to the login page: log in to Mantis in this browser and try again.' };
+  }
+  forget(); // only the list entry; the helper reads the file and deletes it
+  return { path: item.filename, size: Number(item.fileSize || item.bytesReceived) || 0 };
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'mantis-ai') return;
   let host = null;
@@ -595,6 +671,11 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg?.type === 'approve') return host?.post({ type: 'approve', id: msg.id, allow: msg.allow === true });
     // A PDF the helper asked for (pdf_fetch), downloaded by the Mantis tab with the user's session.
     if (msg?.type === 'pdf_chunk') return host?.post({ type: 'pdf_chunk', id: msg.id, data: String(msg.data || '') });
+    // The page could not fetch it (Mantis redirects to another host): Chrome downloads it.
+    if (msg?.type === 'pdf_download') {
+      const result = await downloadAttachment(Number(msg.attachmentId));
+      return host?.post({ type: 'pdf_end', id: msg.id, ...result });
+    }
     if (msg?.type === 'pdf_end') {
       return host?.post({
         type: 'pdf_end', id: msg.id, error: msg.error ? String(msg.error) : undefined, tooLarge: msg.tooLarge === true,

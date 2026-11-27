@@ -154,6 +154,61 @@ describe('MantisAI approvals', () => {
     assert.equal(port.received.at(-1).type, 'done');
   });
 
+  // The page could not fetch the file (Mantis redirects to its storage): Chrome downloads it.
+  async function pdfDownload(downloads, attachmentId = 6791) {
+    const toHost = [];
+    const host = (request, reply) => {
+      if (request.type === 'chat') return reply({ type: 'pdf_fetch', id: 1, attachmentId });
+      toHost.push(request);
+      if (request.type === 'pdf_end') reply({ type: 'done', sessionId: SESSION, text: 'Read.' });
+    };
+    const bg = loadBackground({ nativeMessaging: true, nativeHost: host, downloads });
+    const port = { name: 'mantis-ai', received: [], onMessage: { listeners: [] }, onDisconnect: { listeners: [] } };
+    port.onMessage.addListener = (f) => port.onMessage.listeners.push(f);
+    port.onDisconnect.addListener = (f) => port.onDisconnect.listeners.push(f);
+    port.postMessage = (m) => port.received.push(plain(m));
+    await bg.events.connect.fire(port);
+    await Promise.all(port.onMessage.listeners.map((f) => f({ type: 'send', prompt: 'Read the PDF', context })));
+    await new Promise((r) => setTimeout(r, 30));
+    await Promise.all(port.onMessage.listeners.map((f) => f({ type: 'pdf_download', id: 1, attachmentId })));
+    await new Promise((r) => setTimeout(r, 30));
+    return { bg, toHost: plain(toHost) };
+  }
+
+  test('PDFs the page cannot fetch: Chrome downloads them with the session and the helper gets the file\'s path', async () => {
+    const { bg, toHost } = await pdfDownload(() => ({
+      state: 'complete', filename: '/home/me/Downloads/mantis-ai-pdf/attachment-6791-1.pdf', mime: 'application/pdf',
+      finalUrl: 'https://files.storage.test/6791.pdf?signature=abc', fileSize: 1234,
+    }));
+    assert.equal(bg.state.downloads.length, 1);
+    const [options] = bg.state.downloads;
+    assert.equal(options.url, 'https://projects.webmavens.dev/attachments/6791/download');
+    assert.match(options.filename, /^mantis-ai-pdf\/attachment-6791-\d+\.pdf$/);
+    assert.equal(options.saveAs, false);
+    assert.deepEqual(toHost, [{ type: 'pdf_end', id: 1, path: '/home/me/Downloads/mantis-ai-pdf/attachment-6791-1.pdf', size: 1234 }]);
+    assert.deepEqual(bg.state.erased, [1]); // gone from Chrome's download list
+    assert.deepEqual(bg.state.removedFiles, []); // the helper deletes the file once read
+  });
+
+  test('PDF downloads: logged out, refused, and no permission become clear errors', async () => {
+    const login = await pdfDownload(() => ({ state: 'complete', filename: '/d/mantis-ai-pdf/attachment-6791-1.pdf', mime: 'text/html', finalUrl: 'https://projects.webmavens.dev/login' }));
+    assert.match(login.toHost[0].error, /login page/);
+    assert.equal(login.toHost[0].path, undefined);
+    assert.deepEqual(login.bg.state.removedFiles, [1]);
+
+    const refused = await pdfDownload(() => ({ state: 'interrupted', error: 'SERVER_FORBIDDEN' }));
+    assert.match(refused.toHost[0].error, /do not have access/);
+    const unauthorized = await pdfDownload(() => ({ state: 'interrupted', error: 'SERVER_UNAUTHORIZED' }));
+    assert.match(unauthorized.toHost[0].error, /logged in to Mantis/);
+
+    const noPermission = await pdfDownload(undefined);
+    assert.match(noPermission.toHost[0].error, /Allow PDF reading/);
+    assert.equal(noPermission.bg.state.downloads.length, 0);
+
+    const bad = await pdfDownload(() => ({ state: 'complete' }), -3);
+    assert.match(bad.toHost[0].error, /Invalid attachment id/);
+  });
+
   test('the system prompt explains read_pdf and its paging', async () => {
     const bg = loadBackground({ nativeMessaging: true, nativeHost: replyingHost });
     await bg.chat({ type: 'send', prompt: 'hi', context });
